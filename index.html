@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classroom Tools</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #eff1f5; --surface: #ffffff; --fg: #141a2a; --muted: #5d6680; --line: #d4d9e4;
+  --accent: #2547a8; --teal: #0d7563;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048;
+    --accent: #7d9cff; --teal: #3cc3a6; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px;
+  padding: 48px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px)); }
+main { max-width: 760px; margin: 0 auto; display: grid; gap: 28px; }
+h1 { font-family: var(--display); font-weight: 700; font-size: 2.6rem; letter-spacing: .02em; text-transform: uppercase; margin: 0; }
+p.lead { margin: 6px 0 0; color: var(--muted); }
+.tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+a.tool { display: grid; gap: 6px; padding: 20px 22px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; color: inherit; text-decoration: none; border-top: 4px solid var(--c); }
+a.tool:hover { border-color: var(--c); }
+a.tool:focus-visible { outline: 3px solid var(--c); outline-offset: 2px; }
+a.tool h2 { font-family: var(--display); font-weight: 600; font-size: 1.6rem; margin: 0; color: var(--c); }
+a.tool p { margin: 0; color: var(--muted); line-height: 1.45; }
+footer { color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Classroom Tools</h1>
+    <p class="lead">Timers and displays for the lab and lecture hall. Each one runs in the browser and works full screen on a projector.</p>
+  </header>
+  <div class="tools">
+    <a class="tool" href="exam-clock/" style="--c: var(--accent)">
+      <h2>Exam Room Clock</h2>
+      <p>Countdown, current time and end time for exams, with warnings and on-screen notes.</p>
+    </a>
+    <a class="tool" href="practical-timer/" style="--c: var(--teal)">
+      <h2>Practical Station Timer</h2>
+      <p>Timed rotations for lab practicals, with move time between stations and progress tracking.</p>
+    </a>
+  </div>
+  <footer>Settings are saved in this browser only.</footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Exam Room Clock</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: projector-first. Title strip, giant countdown, now / ends / elapsed row, progress bar, room notes; setup drawer below. */
+:root {
+  --bg: #eff1f5;
+  --surface: #ffffff;
+  --fg: #141a2a;
+  --muted: #5d6680;
+  --line: #d4d9e4;
+  --accent: #2547a8;
+  --accent-soft: #dfe6f8;
+  --caution: #b46a00;
+  --caution-soft: #f7ead2;
+  --final: #c0342c;
+  --final-soft: #f8dcd9;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048;
+    --accent: #7d9cff; --accent-soft: #1d2747; --caution: #f0a73a; --caution-soft: #3a2b12;
+    --final: #ff6a5f; --final-soft: #3d1a19; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048;
+  --accent: #7d9cff; --accent-soft: #1d2747; --caution: #f0a73a; --caution-soft: #3a2b12;
+  --final: #ff6a5f; --final-soft: #3d1a19; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 20px;
+}
+.app { max-width: 1150px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; min-height: 100%; }
+
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { font-family: var(--display); font-weight: 600; font-size: 1.1rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.hdr-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); padding: 9px 14px; font-weight: 500; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .45; cursor: default; }
+.ghost { background: transparent; }
+
+/* Stage */
+.stage { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: clamp(16px, 3vw, 34px); display: grid; gap: clamp(10px, 2vw, 18px); flex: 1; align-content: center; transition: background .4s, border-color .4s; }
+.stage[data-level="caution"] { background: var(--caution-soft); border-color: var(--caution); }
+.stage[data-level="final"], .stage[data-level="over"] { background: var(--final-soft); border-color: var(--final); }
+
+.title-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.exam-title { font-family: var(--display); font-weight: 600; font-size: clamp(1.5rem, 4vw, 2.8rem); margin: 0; text-wrap: balance; min-width: 0; }
+.pill { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .12em; font-size: clamp(.95rem, 2vw, 1.35rem); padding: 6px 16px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.stage[data-level="ready"] .pill { background: var(--line); color: var(--muted); }
+.stage[data-level="caution"] .pill { background: var(--caution); color: var(--surface); }
+.stage[data-level="final"] .pill, .stage[data-level="over"] .pill { background: var(--final); color: var(--surface); }
+.stage[data-level="paused"] .pill { background: var(--caution-soft); color: var(--caution); }
+
+.label { font-size: .8rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 600; }
+.countdown-wrap { text-align: center; display: grid; gap: 4px; }
+.countdown { font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; line-height: .88; font-size: clamp(5.5rem, 24vw, 19rem); color: var(--accent); }
+.countdown .unit { font-size: .38em; font-weight: 600; margin-left: .08em; }
+.stage[data-level="ready"] .countdown { color: var(--fg); }
+.stage[data-level="caution"] .countdown { color: var(--caution); }
+.stage[data-level="final"] .countdown, .stage[data-level="over"] .countdown { color: var(--final); }
+.stage[data-level="over"] .countdown { font-size: clamp(3.5rem, 13vw, 10rem); line-height: 1; }
+.overtime { font-family: var(--display); font-size: clamp(1.2rem, 3vw, 2rem); color: var(--final); font-variant-numeric: tabular-nums; }
+
+.bar { height: 10px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; }
+.stage[data-level="caution"] .bar > i { background: var(--caution); }
+.stage[data-level="final"] .bar > i, .stage[data-level="over"] .bar > i { background: var(--final); }
+
+.readouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.readout { display: grid; gap: 2px; text-align: center; min-width: 0; }
+.readout .v { font-family: var(--display); font-weight: 600; font-variant-numeric: tabular-nums; font-size: clamp(1.7rem, 5.5vw, 4.2rem); line-height: 1; }
+.readout .v small { font-size: .5em; color: var(--muted); font-weight: 500; }
+
+.banner { text-align: center; font-family: var(--display); font-weight: 700; font-size: clamp(1.4rem, 4vw, 2.6rem); letter-spacing: .02em; padding: 8px 12px; border-radius: 10px; background: var(--fg); color: var(--surface); }
+
+.notes { list-style: none; margin: 0; padding: 14px 0 0; border-top: 1px solid var(--line); display: grid; gap: 6px; font-size: clamp(1.05rem, 2.2vw, 1.6rem); }
+.stage[data-level="caution"] .notes { border-color: var(--caution); }
+.stage[data-level="final"] .notes, .stage[data-level="over"] .notes { border-color: var(--final); }
+.notes li { display: flex; gap: 10px; align-items: baseline; }
+.notes li::before { content: ""; flex: none; width: .45em; height: .45em; border-radius: 2px; background: var(--muted); transform: translateY(-.1em); }
+
+/* Controls */
+.controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.controls button { padding: 13px 20px; font-size: 1.05rem; }
+#startBtn { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; min-width: 170px; }
+#startBtn.paused { background: var(--caution); border-color: var(--caution); }
+.confirm { display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.confirm .danger { background: var(--final); border-color: var(--final); color: var(--surface); }
+.keys { text-align: center; color: var(--muted); font-size: .85rem; }
+kbd { font-family: var(--body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--surface); color: var(--fg); }
+
+/* Setup */
+.settings { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: grid; gap: 14px; }
+.settings h2 { margin: 0; font-family: var(--display); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; font-size: 1.05rem; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.field { display: grid; gap: 5px; min-width: 0; align-content: start; }
+.field.wide { grid-column: 1 / -1; }
+.field > label, .field > .flabel { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.field input[type=text], .field input[type=number], .field input[type=time], .field textarea {
+  font: inherit; font-size: 1.05rem; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); width: 100%; font-variant-numeric: tabular-nums;
+}
+.field textarea { min-height: 96px; resize: vertical; line-height: 1.45; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg label { flex: 1; text-align: center; padding: 8px; cursor: pointer; font-size: .95rem; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:checked) { background: var(--accent); color: var(--surface); }
+.seg label:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: -3px; }
+.checks { display: flex; gap: 18px; flex-wrap: wrap; }
+.check { display: flex; align-items: center; gap: 8px; font-size: .95rem; }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.note { font-size: .84rem; color: var(--muted); margin: 0; }
+.err { color: var(--final); font-size: .9rem; margin: 0; }
+
+body.focus .settings, body.focus .keys, body.focus .brand { display: none; }
+
+@media (max-width: 560px) {
+  .readouts { grid-template-columns: 1fr; }
+  .controls button { flex: 1 1 40%; padding: 12px; }
+  #startBtn { flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .stage { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <p class="brand">Exam Room Clock</p>
+    <div class="hdr-actions">
+      <button id="soundBtn" class="ghost">Sound: on</button>
+      <button id="focusBtn" class="ghost">Hide setup</button>
+      <button id="fsBtn" class="ghost">Full screen</button>
+    </div>
+  </header>
+
+  <section class="stage" id="stage" data-level="ready" aria-live="polite">
+    <div class="title-row">
+      <h1 class="exam-title" id="titleOut">Exam 2</h1>
+      <div class="pill" id="pill">Not started</div>
+    </div>
+
+    <div class="countdown-wrap">
+      <div class="label" id="cdLabel">Exam length</div>
+      <div class="countdown" id="countdown">80:00</div>
+      <div class="overtime" id="overtime" hidden></div>
+    </div>
+
+    <div class="bar"><i id="barFill"></i></div>
+
+    <div class="readouts">
+      <div class="readout"><div class="label">Current time</div><div class="v" id="nowOut">—</div></div>
+      <div class="readout"><div class="label" id="endsLabel">Would end at</div><div class="v" id="endsOut">—</div></div>
+      <div class="readout"><div class="label">Elapsed</div><div class="v" id="elapsedOut">0:00</div></div>
+    </div>
+
+    <div class="banner" id="banner" hidden></div>
+
+    <ul class="notes" id="notesOut"></ul>
+  </section>
+
+  <div class="controls" id="controls">
+    <button id="startBtn">Start exam</button>
+    <button id="minusBtn" title="Remove 1 minute">− 1 min</button>
+    <button id="plusBtn" title="Add 1 minute">+ 1 min</button>
+    <button id="plus5Btn" title="Add 5 minutes">+ 5 min</button>
+    <button id="resetBtn">Reset</button>
+  </div>
+  <div class="confirm" id="confirmReset" hidden>
+    <span>Stop the clock and reset?</span>
+    <button class="danger" id="confirmYes">Yes, reset</button>
+    <button id="confirmNo">Cancel</button>
+  </div>
+  <div class="keys"><kbd>Space</kbd> start / pause &nbsp;·&nbsp; <kbd>+</kbd> / <kbd>−</kbd> add or remove a minute</div>
+
+  <section class="settings" id="settings">
+    <h2>Setup</h2>
+    <div class="fields">
+      <div class="field"><label for="titleIn">Exam name</label><input type="text" id="titleIn" value="Exam 2"></div>
+      <div class="field">
+        <span class="flabel" id="modeLbl">Set the length by</span>
+        <div class="seg" role="radiogroup" aria-labelledby="modeLbl">
+          <label><input type="radio" name="mode" id="modeDur" value="duration" checked>Minutes</label>
+          <label><input type="radio" name="mode" id="modeEnd" value="end">End time</label>
+        </div>
+      </div>
+      <div class="field" id="durField"><label for="durIn">Exam length (minutes)</label><input type="number" id="durIn" min="1" max="600" value="80"></div>
+      <div class="field" id="endField" hidden><label for="endIn">Ends at</label><input type="time" id="endIn" value="11:20"></div>
+      <div class="field"><label for="warnIn">Warnings at (minutes left)</label><input type="text" id="warnIn" value="30, 15, 5, 1" inputmode="numeric"></div>
+      <div class="field wide"><label for="notesIn">Notes shown on screen (one per line)</label>
+        <textarea id="notesIn">Phones off and put away
+Write your name and NetID on every page
+Raise your hand if you need anything</textarea></div>
+    </div>
+    <div class="checks">
+      <label class="check"><input type="checkbox" id="secIn" checked> Show seconds on the countdown</label>
+      <label class="check"><input type="checkbox" id="h24In"> 24-hour clock</label>
+    </div>
+    <p class="err" id="err" hidden></p>
+    <p class="note">Warnings show a banner and play a soft chime. The countdown turns amber at the second-to-last warning and red at the last one. If the page reloads during an exam, the clock picks up where it was.</p>
+  </section>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const KEY = 'examRoomClock';
+  const S = { title: 'Exam 2', mode: 'duration', dur: 80, end: '11:20', warn: '30, 15, 5, 1',
+    notes: 'Phones off and put away\nWrite your name and NetID on every page\nRaise your hand if you need anything',
+    sec: true, h24: false, sound: true };
+  // run: status ready|running|paused|over, endAt ms, totalMs, remainingMs (paused), fired {min:true}
+  let R = { status: 'ready', endAt: 0, totalMs: 0, remainingMs: 0, fired: {} };
+  try { const saved = JSON.parse(localStorage.getItem(KEY) || '{}'); Object.assign(S, saved.S || {}); if (saved.R) R = Object.assign(R, saved.R); } catch (e) {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ S, R })); } catch (e) {} };
+
+  const warnList = () => [...new Set(S.warn.split(/[^0-9.]+/).map(Number).filter(n => n > 0))].sort((a, b) => b - a);
+
+  // ---- formatting ----
+  const pad = n => String(n).padStart(2, '0');
+  function fmtDur(ms, withSec) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60;
+    if (withSec) return h ? h + ':' + pad(m) + ':' + pad(r) : m + ':' + pad(r);
+    const mins = Math.ceil(s / 60);
+    return h ? Math.floor(mins / 60) + ':' + pad(mins % 60) : String(mins);
+  }
+  function fmtClock(d, withSec) {
+    let h = d.getHours(); const m = d.getMinutes(), s = d.getSeconds();
+    if (S.h24) return pad(h) + ':' + pad(m) + (withSec ? ':' + pad(s) : '');
+    const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+    return h + ':' + pad(m) + (withSec ? ':' + pad(s) : '') + ' <small>' + ap + '</small>';
+  }
+
+  // ---- audio: soft chimes ----
+  let ac = null;
+  function ensureAudio() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } if (ac && ac.state === 'suspended') ac.resume(); }
+  function tone(freq, dur, when = 0, vol = 0.4) {
+    if (!S.sound || !ac) return;
+    const t = ac.currentTime + when, g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    g.connect(ac.destination);
+    [[1, 1], [2, 0.18], [3, 0.05]].forEach(([k, a]) => {
+      const o = ac.createOscillator(), og = ac.createGain();
+      o.type = 'sine'; o.frequency.value = freq * k; og.gain.value = a;
+      o.connect(og).connect(g); o.start(t); o.stop(t + dur + 0.05);
+    });
+  }
+  const sndStart = () => { tone(523, 1.0); tone(659, 1.3, 0.25); };
+  const sndWarn = () => { tone(659, 1.0); tone(659, 1.2, 0.45); };
+  const sndOver = () => { tone(784, 1.2); tone(659, 1.2, 0.35); tone(523, 2.0, 0.7); };
+
+  // ---- wake lock ----
+  let wl = null;
+  async function wake(on) {
+    try {
+      if (on && !wl && navigator.wakeLock) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); }
+      else if (!on && wl) { await wl.release(); wl = null; }
+    } catch (e) { wl = null; }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && R.status === 'running') wake(true); });
+
+  // ---- banner ----
+  let bannerTimer = null;
+  function showBanner(text, ms) {
+    $('banner').textContent = text; $('banner').hidden = false;
+    clearTimeout(bannerTimer);
+    if (ms) bannerTimer = setTimeout(() => { $('banner').hidden = true; }, ms);
+  }
+
+  // ---- core ----
+  function remaining(now) {
+    if (R.status === 'running' || R.status === 'over') return R.endAt - now;
+    if (R.status === 'paused') return R.remainingMs;
+    return plannedMs(now);
+  }
+  function plannedMs(now) {
+    if (S.mode === 'duration') return S.dur * 60000;
+    const [h, m] = S.end.split(':').map(Number);
+    const d = new Date(now); d.setHours(h || 0, m || 0, 0, 0);
+    return d.getTime() - now;
+  }
+  function markFired(rem) { // anything already passed counts as fired, anything still ahead is re-armed
+    const f = {}; warnList().forEach(w => { if (rem <= w * 60000) f[w] = true; }); R.fired = f;
+  }
+
+  function start() {
+    ensureAudio();
+    const now = Date.now();
+    const ms = plannedMs(now);
+    if (ms < 60000) { $('err').textContent = S.mode === 'end' ? 'That end time has already passed or is less than a minute away. Pick a later time.' : 'Set a length of at least 1 minute.'; $('err').hidden = false; return; }
+    $('err').hidden = true;
+    R.status = 'running'; R.totalMs = ms; R.endAt = now + ms; markFired(ms);
+    sndStart(); wake(true); showBanner('Exam has started', 6000); save(); render();
+  }
+  function togglePause() {
+    ensureAudio();
+    const now = Date.now();
+    if (R.status === 'ready') return start();
+    if (R.status === 'running') { R.remainingMs = R.endAt - now; R.status = 'paused'; wake(false); showBanner('Clock paused'); }
+    else if (R.status === 'paused') { R.endAt = now + R.remainingMs; R.status = 'running'; wake(true); $('banner').hidden = true; }
+    save(); render();
+  }
+  function adjust(min) {
+    ensureAudio();
+    const now = Date.now(), d = min * 60000;
+    if (R.status === 'ready') {
+      if (S.mode === 'duration') { S.dur = Math.max(1, S.dur + min); $('durIn').value = S.dur; save(); render(); }
+      return;
+    }
+    if (R.status === 'paused') { R.remainingMs = Math.max(0, R.remainingMs + d); }
+    else {
+      if (R.status === 'over' && min > 0) { R.endAt = now; R.status = 'running'; wake(true); }
+      R.endAt += d;
+    }
+    R.totalMs = Math.max(60000, R.totalMs + d);
+    markFired(remaining(now));
+    if (min > 0) showBanner(min + ' minute' + (min > 1 ? 's' : '') + ' added', 5000);
+    save(); render();
+  }
+  function reset() {
+    R = { status: 'ready', endAt: 0, totalMs: 0, remainingMs: 0, fired: {} };
+    wake(false); $('banner').hidden = true; save(); render();
+  }
+
+  function level(rem) {
+    if (R.status === 'ready') return 'ready';
+    if (R.status === 'paused') return 'paused';
+    if (R.status === 'over') return 'over';
+    const w = warnList(); // descending
+    if (w.length && rem <= w[w.length - 1] * 60000) return 'final';
+    if (w.length > 1 && rem <= w[w.length - 2] * 60000) return 'caution';
+    return 'running';
+  }
+
+  function tick() {
+    const now = Date.now();
+    if (R.status === 'running') {
+      const rem = R.endAt - now;
+      if (rem <= 0) { R.status = 'over'; sndOver(); showBanner('Time is up. Pens down.'); wake(false); save(); }
+      else {
+        for (const w of warnList()) {
+          if (!R.fired[w] && rem <= w * 60000) {
+            R.fired[w] = true; save();
+            if (rem > w * 60000 - 10000) { sndWarn(); showBanner(w >= 1 ? (w + (w === 1 ? ' minute' : ' minutes') + ' remaining') : 'Almost done', 30000); }
+          }
+        }
+      }
+    }
+    render(now);
+  }
+
+  function render(now = Date.now()) {
+    const rem = remaining(now);
+    const lv = level(rem);
+    $('stage').dataset.level = lv;
+    $('titleOut').textContent = S.title || 'Exam';
+
+    const pills = { ready: 'Not started', running: 'In progress', caution: 'In progress', final: 'Final minutes', paused: 'Paused', over: "Time's up" };
+    $('pill').textContent = pills[lv];
+    $('cdLabel').textContent = R.status === 'ready' ? 'Exam length' : R.status === 'over' ? '' : 'Time remaining';
+    $('cdLabel').hidden = R.status === 'over';
+
+    if (R.status === 'over') {
+      $('countdown').textContent = 'Pens down';
+      $('overtime').hidden = false; $('overtime').textContent = 'Over by ' + fmtDur(-rem + 999, true);
+    } else {
+      $('overtime').hidden = true;
+      const withSec = S.sec || rem < 60000 * 2;
+      const txt = fmtDur(Math.max(0, rem), withSec);
+      $('countdown').innerHTML = withSec || rem >= 3600000 ? txt : txt + '<span class="unit">min</span>';
+    }
+
+    const total = R.status === 'ready' ? Math.max(0, rem) : R.totalMs;
+    const elapsed = R.status === 'ready' ? 0 : Math.max(0, total - Math.max(0, rem));
+    $('barFill').style.width = (total ? Math.min(100, elapsed / total * 100) : 0).toFixed(2) + '%';
+
+    $('nowOut').innerHTML = fmtClock(new Date(now), false);
+    $('endsLabel').textContent = R.status === 'ready' ? 'Would end at' : R.status === 'paused' ? 'Ends (if resumed now)' : 'Ends at';
+    $('endsOut').innerHTML = fmtClock(new Date(now + Math.max(0, rem)), false);
+    if (R.status === 'over') $('endsOut').innerHTML = fmtClock(new Date(R.endAt), false);
+    $('elapsedOut').textContent = fmtDur(elapsed, false) + (S.sec ? '' : '');
+    $('elapsedOut').textContent = (() => { const m = Math.floor(elapsed / 60000); return m >= 60 ? Math.floor(m / 60) + ':' + pad(m % 60) : m + ' min'; })();
+
+    const sb = $('startBtn');
+    sb.textContent = R.status === 'ready' ? 'Start exam' : R.status === 'running' ? 'Pause' : R.status === 'paused' ? 'Resume' : 'Finished';
+    sb.disabled = R.status === 'over';
+    sb.classList.toggle('paused', R.status === 'paused');
+    $('minusBtn').disabled = R.status === 'over' || (R.status === 'ready' && S.mode === 'end');
+    $('plusBtn').disabled = $('plus5Btn').disabled = (R.status === 'ready' && S.mode === 'end');
+    const locked = R.status !== 'ready';
+    ['modeDur', 'modeEnd', 'durIn', 'endIn'].forEach(id => $(id).disabled = locked);
+    document.title = R.status === 'running' ? fmtDur(rem, true) + ' left · Exam Room Clock' : 'Exam Room Clock';
+  }
+
+  function renderNotes() {
+    const ul = $('notesOut'); ul.innerHTML = '';
+    S.notes.split('\n').map(s => s.trim()).filter(Boolean).forEach(t => { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+    ul.hidden = !ul.children.length;
+  }
+
+  // ---- inputs ----
+  function readInputs() {
+    S.title = $('titleIn').value.trim();
+    S.mode = $('modeEnd').checked ? 'end' : 'duration';
+    const d = parseInt($('durIn').value, 10); if (!isNaN(d)) S.dur = Math.min(600, Math.max(1, d));
+    S.end = $('endIn').value || S.end;
+    S.warn = $('warnIn').value;
+    S.notes = $('notesIn').value;
+    S.sec = $('secIn').checked; S.h24 = $('h24In').checked;
+    $('durField').hidden = S.mode !== 'duration'; $('endField').hidden = S.mode !== 'end';
+    if (R.status === 'running') markFiredKeep();
+    $('err').hidden = true;
+    save(); renderNotes(); render();
+  }
+  function markFiredKeep() { // when warning list changes mid-exam, don't re-sound ones already passed
+    const rem = R.endAt - Date.now(), f = {};
+    warnList().forEach(w => { if (rem <= w * 60000) f[w] = true; }); R.fired = f;
+  }
+  ['titleIn', 'durIn', 'endIn', 'warnIn', 'notesIn'].forEach(id => $(id).addEventListener('input', readInputs));
+  ['modeDur', 'modeEnd', 'secIn', 'h24In'].forEach(id => $(id).addEventListener('change', readInputs));
+
+  $('startBtn').onclick = togglePause;
+  $('plusBtn').onclick = () => adjust(1);
+  $('plus5Btn').onclick = () => adjust(5);
+  $('minusBtn').onclick = () => adjust(-1);
+  $('resetBtn').onclick = () => { if (R.status === 'ready') return; $('confirmReset').hidden = false; $('controls').hidden = true; };
+  $('confirmYes').onclick = () => { reset(); $('confirmReset').hidden = true; $('controls').hidden = false; };
+  $('confirmNo').onclick = () => { $('confirmReset').hidden = true; $('controls').hidden = false; };
+
+  $('soundBtn').onclick = () => { S.sound = !S.sound; ensureAudio(); save(); syncHdr(); if (S.sound) tone(659, 0.9); };
+  $('focusBtn').onclick = () => { document.body.classList.toggle('focus'); syncHdr(); };
+  $('fsBtn').onclick = async () => {
+    try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
+    catch (e) { $('fsBtn').textContent = 'Full screen unavailable'; $('fsBtn').disabled = true; }
+  };
+  document.addEventListener('fullscreenchange', syncHdr);
+  function syncHdr() {
+    $('soundBtn').textContent = 'Sound: ' + (S.sound ? 'on' : 'off');
+    $('focusBtn').textContent = document.body.classList.contains('focus') ? 'Show setup' : 'Hide setup';
+    if (!$('fsBtn').disabled) $('fsBtn').textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
+  }
+
+  document.addEventListener('keydown', e => {
+    if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+    if (e.code === 'Space') { e.preventDefault(); togglePause(); }
+    else if (e.key === '+' || e.key === '=') adjust(1);
+    else if (e.key === '-' || e.key === '_') adjust(-1);
+  });
+
+  // ---- init ----
+  $('titleIn').value = S.title; $('durIn').value = S.dur; $('endIn').value = S.end;
+  $('warnIn').value = S.warn; $('notesIn').value = S.notes; $('secIn').checked = S.sec; $('h24In').checked = S.h24;
+  $('modeEnd').checked = S.mode === 'end'; $('modeDur').checked = S.mode !== 'end';
+  $('durField').hidden = S.mode !== 'duration'; $('endField').hidden = S.mode !== 'end';
+  if (R.status === 'running' || R.status === 'over') wake(R.status === 'running');
+  renderNotes(); syncHdr(); render();
+  setInterval(tick, 200);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Practical Station Timer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-screen instrument. Header strip, giant countdown, 25-cell station strip, controls, settings drawer. */
+:root {
+  --bg: #eef2f1;
+  --surface: #ffffff;
+  --fg: #13201c;
+  --muted: #5a6b66;
+  --line: #d3dcd9;
+  --answer: #0d7563;
+  --answer-soft: #d6ece7;
+  --move: #b86a00;
+  --move-soft: #f6e6cc;
+  --warn: #c0342c;
+  --done: #3b4a8f;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1412; --surface: #151f1c; --fg: #e4ece9; --muted: #8fa29c; --line: #26332f;
+    --answer: #3cc3a6; --answer-soft: #143630; --move: #f0a73a; --move-soft: #3a2a10;
+    --warn: #ff6a5f; --done: #8e9cf0; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1412; --surface: #151f1c; --fg: #e4ece9; --muted: #8fa29c; --line: #26332f;
+  --answer: #3cc3a6; --answer-soft: #143630; --move: #f0a73a; --move-soft: #3a2a10;
+  --warn: #ff6a5f; --done: #8e9cf0; color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 20px;
+  box-sizing: border-box;
+}
+* { box-sizing: border-box; }
+.app { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; min-height: 100%; }
+
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-family: var(--display); font-weight: 600; font-size: 1.35rem; letter-spacing: .02em; margin: 0; text-transform: uppercase; }
+.hdr-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); padding: 9px 14px; font-weight: 500; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--answer); outline-offset: 2px; }
+button:disabled { opacity: .45; cursor: default; }
+.ghost { background: transparent; }
+
+/* Main readout */
+.stage { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: clamp(16px, 3vw, 32px); display: grid; gap: 14px; flex: 1; align-content: center; transition: background .3s; }
+.stage[data-phase="move"] { background: var(--move-soft); border-color: var(--move); }
+.stage[data-phase="done"] { border-color: var(--done); }
+.top-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.rotation { font-family: var(--display); font-weight: 600; font-size: clamp(1.6rem, 4.5vw, 3rem); letter-spacing: .01em; }
+.rotation .of { color: var(--muted); font-weight: 500; }
+.pill { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .12em; font-size: clamp(1rem, 2.4vw, 1.5rem); padding: 6px 16px; border-radius: 999px; background: var(--answer-soft); color: var(--answer); }
+.stage[data-phase="move"] .pill { background: var(--move); color: var(--surface); }
+.stage[data-phase="done"] .pill { background: var(--done); color: var(--surface); }
+.stage[data-phase="ready"] .pill { background: var(--line); color: var(--muted); }
+
+.clock { font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; line-height: .85; font-size: clamp(7rem, 30vw, 22rem); text-align: center; color: var(--answer); letter-spacing: -.01em; }
+.stage[data-phase="move"] .clock { color: var(--move); }
+.stage[data-phase="ready"] .clock { color: var(--fg); }
+.stage[data-phase="done"] .clock { color: var(--done); font-size: clamp(4rem, 16vw, 11rem); }
+.stage.warn .clock { color: var(--warn); }
+
+.bar { height: 10px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--answer); border-radius: 99px; }
+.stage[data-phase="move"] .bar > i { background: var(--move); }
+.stage.warn .bar > i { background: var(--warn); }
+
+.sub { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 1rem; }
+.sub b { color: var(--fg); font-weight: 600; }
+
+/* Station strip */
+.strip-wrap { display: grid; gap: 8px; }
+.strip-label { font-size: .78rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); display: flex; justify-content: space-between; }
+.strip { display: grid; grid-template-columns: repeat(var(--n, 25), minmax(0, 1fr)); gap: 4px; }
+.cell { aspect-ratio: 1 / 1.15; max-width: 100%; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); display: grid; place-items: center; font-family: var(--display); font-weight: 600; font-size: clamp(.6rem, 1.6vw, .95rem); color: var(--muted); font-variant-numeric: tabular-nums; }
+.cell.done { background: var(--answer); border-color: var(--answer); color: var(--surface); }
+.cell.now { border: 2px solid var(--answer); color: var(--answer); background: var(--answer-soft); }
+.cell.now.moving { border-color: var(--move); color: var(--move); background: var(--move-soft); }
+
+/* Controls */
+.controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.controls button { padding: 14px 22px; font-size: 1.05rem; min-width: 110px; }
+#startBtn { background: var(--answer); border-color: var(--answer); color: var(--surface); font-weight: 600; min-width: 170px; }
+#startBtn.paused { background: var(--move); border-color: var(--move); }
+.keys { text-align: center; color: var(--muted); font-size: .85rem; }
+kbd { font-family: var(--body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--surface); color: var(--fg); }
+
+/* Settings */
+.settings { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: grid; gap: 14px; }
+.settings h2 { margin: 0; font-family: var(--display); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; font-size: 1.05rem; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+.field { display: grid; gap: 5px; min-width: 0; }
+.field label { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.field input[type=number] { font: inherit; font-size: 1.15rem; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); width: 100%; font-variant-numeric: tabular-nums; }
+.field input:disabled { opacity: .55; }
+.check { display: flex; align-items: center; gap: 8px; font-size: .95rem; }
+.check input { width: 18px; height: 18px; accent-color: var(--answer); }
+.summary { color: var(--muted); font-size: .92rem; font-variant-numeric: tabular-nums; }
+.summary b { color: var(--fg); }
+.note { font-size: .82rem; color: var(--muted); margin: 0; }
+
+/* Confirm reset inline */
+.confirm { display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: .95rem; }
+.confirm .danger { background: var(--warn); border-color: var(--warn); color: var(--surface); }
+
+/* Projector / focus mode hides chrome */
+body.focus .settings, body.focus .keys, body.focus header h1 { display: none; }
+
+@media (max-width: 520px) {
+  .strip { grid-template-columns: repeat(var(--cols-sm, 13), minmax(0, 1fr)); }
+  .controls button { min-width: 0; flex: 1 1 40%; padding: 12px; }
+  #startBtn { flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .stage { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <h1>Practical Station Timer</h1>
+    <div class="hdr-actions">
+      <button id="soundBtn" class="ghost" aria-pressed="true">Sound: on</button>
+      <button id="focusBtn" class="ghost">Hide settings</button>
+      <button id="fsBtn" class="ghost">Full screen</button>
+    </div>
+  </header>
+
+  <section class="stage" id="stage" data-phase="ready" aria-live="polite">
+    <div class="top-row">
+      <div class="rotation" id="rotLabel">Rotation 1 <span class="of">of 25</span></div>
+      <div class="pill" id="phasePill">Ready</div>
+    </div>
+    <div class="clock" id="clock">1:30</div>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="sub">
+      <span>Stations completed: <b id="doneCount">0</b> / <span id="doneTotal">25</span></span>
+      <span>Practical time left: <b id="totalLeft">—</b></span>
+      <span>Ends around: <b id="endsAt">—</b></span>
+    </div>
+  </section>
+
+  <div class="strip-wrap">
+    <div class="strip-label"><span>Rotations</span><span id="stripNote">Filled = finished</span></div>
+    <div class="strip" id="strip"></div>
+  </div>
+
+  <div class="controls" id="controls">
+    <button id="backBtn" title="Restart the previous rotation">◀ Back</button>
+    <button id="startBtn">Start</button>
+    <button id="skipBtn" title="End this phase now">Skip ▶</button>
+    <button id="resetBtn">Reset</button>
+  </div>
+  <div class="confirm" id="confirmReset" hidden>
+    <span>Reset the whole practical to rotation 1?</span>
+    <button class="danger" id="confirmYes">Yes, reset</button>
+    <button id="confirmNo">Cancel</button>
+  </div>
+  <div class="keys"><kbd>Space</kbd> start / pause &nbsp;·&nbsp; <kbd>→</kbd> skip &nbsp;·&nbsp; <kbd>←</kbd> back</div>
+
+  <section class="settings" id="settings">
+    <h2>Setup</h2>
+    <div class="fields">
+      <div class="field"><label for="nStations">Stations</label><input type="number" id="nStations" min="1" max="60" value="25"></div>
+      <div class="field"><label for="stationSec">Seconds per station</label><input type="number" id="stationSec" min="5" max="1200" step="5" value="90"></div>
+      <div class="field"><label for="bufferSec">Move time between stations (sec)</label><input type="number" id="bufferSec" min="0" max="120" step="5" value="10"></div>
+      <div class="field"><label for="warnSec">Warning at (sec left)</label><input type="number" id="warnSec" min="0" max="60" value="10"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="bufferOn" checked> Use move time between stations</label>
+    <div class="summary" id="summary"></div>
+    <p class="note">Setup locks once the practical starts. Reset to change it. Sounds: a single soft chime at the warning, a falling two-note chime when time is up, and a rising two-note chime when the next station starts.</p>
+  </section>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const S = { // settings
+    n: 25, station: 90, buffer: 10, bufferOn: true, warn: 10, sound: true
+  };
+  try { Object.assign(S, JSON.parse(localStorage.getItem('practicalTimer') || '{}')); } catch (e) {}
+  const save = () => { try { localStorage.setItem('practicalTimer', JSON.stringify(S)); } catch (e) {} };
+
+  // run state
+  let st = { started: false, running: false, rot: 1, phase: 'ready', phaseEnd: 0, remaining: 0, done: false };
+  let warned = false;
+
+  const buf = () => S.bufferOn ? Math.max(0, S.buffer) : 0;
+  const fmt = s => { s = Math.max(0, Math.ceil(s)); const m = Math.floor(s / 60); const r = s % 60; return m + ':' + String(r).padStart(2, '0'); };
+  const fmtLong = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60; return (h ? h + 'h ' : '') + m + 'm ' + String(r).padStart(2, '0') + 's'; };
+  const clockTime = d => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const totalSec = () => S.n * S.station + (S.n - 1) * buf();
+
+  // ---- audio ----
+  let ac = null;
+  function ensureAudio() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } if (ac && ac.state === 'suspended') ac.resume(); }
+  function tone(freq, dur, when = 0, vol = 0.35) {
+    if (!S.sound || !ac) return;
+    // soft chime: sine fundamental plus a quiet overtone, gentle attack, natural decay
+    const t = ac.currentTime + when, g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    g.connect(ac.destination);
+    [[1, 1], [2, 0.18], [3, 0.05]].forEach(([mult, amp]) => {
+      const o = ac.createOscillator(), og = ac.createGain();
+      o.type = 'sine'; o.frequency.value = freq * mult; og.gain.value = amp;
+      o.connect(og).connect(g); o.start(t); o.stop(t + dur + 0.05);
+    });
+  }
+  const sndWarn = () => tone(659, 0.9, 0, 0.3);
+  const sndEnd = () => { tone(784, 1.2, 0, 0.45); tone(523, 1.6, 0.35, 0.45); };
+  const sndStart = () => { tone(523, 1.0, 0, 0.4); tone(659, 1.3, 0.25, 0.4); };
+  const sndDone = () => { tone(523, 1.0, 0, 0.4); tone(659, 1.0, 0.25, 0.4); tone(784, 1.0, 0.5, 0.4); tone(1047, 2.0, 0.75, 0.4); };
+
+  // ---- wake lock ----
+  let wl = null;
+  async function wake(on) {
+    try {
+      if (on && !wl && navigator.wakeLock) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); }
+      else if (!on && wl) { await wl.release(); wl = null; }
+    } catch (e) { wl = null; }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && st.running) wake(true); });
+
+  // ---- strip ----
+  function buildStrip() {
+    const strip = $('strip'); strip.innerHTML = '';
+    strip.style.setProperty('--n', S.n);
+    strip.style.setProperty('--cols-sm', Math.ceil(S.n / 2));
+    for (let i = 1; i <= S.n; i++) { const c = document.createElement('div'); c.className = 'cell'; c.textContent = i; strip.appendChild(c); }
+  }
+
+  // ---- phase logic ----
+  function phaseLen(p) { return p === 'move' ? buf() : S.station; }
+  function startPhase(p, endAt) { st.phase = p; st.phaseEnd = endAt; warned = false; }
+
+  function advance(now, fromSkip) {
+    // called when current phase ends; carry the boundary forward so time doesn't drift
+    const boundary = fromSkip ? now : st.phaseEnd;
+    if (st.phase === 'answer') {
+      if (st.rot >= S.n) { finish(); return; }
+      sndEnd();
+      if (buf() > 0) startPhase('move', boundary + buf() * 1000);
+      else { st.rot++; startPhase('answer', boundary + S.station * 1000); setTimeout(sndStart, 1300); }
+    } else if (st.phase === 'move') {
+      st.rot++; startPhase('answer', boundary + S.station * 1000); sndStart();
+    }
+  }
+  function finish() {
+    st.done = true; st.running = false; st.phase = 'done'; st.rot = S.n; sndDone(); wake(false); render();
+  }
+
+  function remainingNow(now) {
+    if (st.phase === 'ready') return S.station;
+    if (st.phase === 'done') return 0;
+    return st.running ? (st.phaseEnd - now) / 1000 : st.remaining;
+  }
+  function totalLeft(now) {
+    if (st.phase === 'ready') return totalSec();
+    if (st.phase === 'done') return 0;
+    const r = Math.max(0, remainingNow(now));
+    const after = S.n - st.rot; // full rotations after current
+    if (st.phase === 'answer') return r + after * (S.station + buf());
+    return r + (after) * S.station + (after - 1) * buf(); // in move: next answer etc.
+  }
+
+  // ---- render ----
+  let lastPhaseRendered = '';
+  function render() {
+    const now = Date.now();
+    const rem = remainingNow(now);
+    const stage = $('stage');
+    stage.dataset.phase = st.phase;
+    const isWarn = st.phase === 'answer' && S.warn > 0 && rem <= S.warn && rem > 0;
+    stage.classList.toggle('warn', isWarn);
+
+    if (st.phase === 'done') {
+      $('clock').textContent = 'Done';
+      $('rotLabel').innerHTML = 'All ' + S.n + ' stations <span class="of">complete</span>';
+      $('phasePill').textContent = 'Finished';
+    } else if (st.phase === 'move') {
+      $('clock').textContent = fmt(rem);
+      $('rotLabel').innerHTML = 'Next: rotation ' + (st.rot + 1) + ' <span class="of">of ' + S.n + '</span>';
+      $('phasePill').textContent = st.running ? 'Move to next station' : 'Paused · moving';
+    } else {
+      $('clock').textContent = fmt(rem);
+      $('rotLabel').innerHTML = 'Rotation ' + st.rot + ' <span class="of">of ' + S.n + '</span>';
+      $('phasePill').textContent = st.phase === 'ready' ? 'Ready' : (st.running ? 'Answer' : 'Paused');
+    }
+    const len = st.phase === 'ready' ? S.station : phaseLen(st.phase);
+    const frac = st.phase === 'done' ? 1 : st.phase === 'ready' ? 0 : 1 - Math.max(0, rem) / len;
+    $('barFill').style.width = (Math.min(1, Math.max(0, frac)) * 100).toFixed(2) + '%';
+
+    const completed = st.phase === 'done' ? S.n : st.phase === 'move' ? st.rot : st.rot - 1;
+    $('doneCount').textContent = completed; $('doneTotal').textContent = S.n;
+    const tl = totalLeft(now);
+    $('totalLeft').textContent = fmtLong(tl);
+    $('endsAt').textContent = st.phase === 'done' ? 'now' : clockTime(new Date(now + tl * 1000));
+
+    const cells = $('strip').children;
+    for (let i = 0; i < cells.length; i++) {
+      const k = i + 1, c = cells[i];
+      c.classList.toggle('done', k <= completed);
+      c.classList.toggle('now', st.phase !== 'done' && (st.phase === 'move' ? k === st.rot + 1 : k === st.rot) && st.phase !== 'ready');
+      c.classList.toggle('moving', st.phase === 'move');
+    }
+
+    const sb = $('startBtn');
+    sb.textContent = st.phase === 'done' ? 'Finished' : !st.started ? 'Start' : st.running ? 'Pause' : 'Resume';
+    sb.classList.toggle('paused', st.started && !st.running && st.phase !== 'done');
+    sb.disabled = st.phase === 'done';
+    $('backBtn').disabled = !st.started || st.phase === 'done' && false;
+    $('skipBtn').disabled = !st.started || st.phase === 'done';
+    ['nStations', 'stationSec', 'bufferSec', 'warnSec', 'bufferOn'].forEach(id => $(id).disabled = st.started && !['warnSec'].includes(id));
+    document.title = st.started && st.phase !== 'done' ? fmt(rem) + ' · R' + st.rot + ' · Practical Station Timer' : 'Practical Station Timer';
+  }
+
+  function summary() {
+    const t = totalSec();
+    $('summary').innerHTML = '<b>' + S.n + '</b> stations × <b>' + fmt(S.station) + '</b>' +
+      (buf() ? ' + <b>' + (S.n - 1) + '</b> moves × <b>' + buf() + 's</b>' : ' with no move time') +
+      ' = <b>' + fmtLong(t) + '</b> total';
+  }
+
+  // ---- tick ----
+  function tick() {
+    if (st.running) {
+      const now = Date.now();
+      let guard = 0;
+      while (st.running && now >= st.phaseEnd && guard++ < 5) advance(now, false);
+      if (st.running && st.phase === 'answer' && !warned && S.warn > 0) {
+        const rem = (st.phaseEnd - now) / 1000;
+        if (rem <= S.warn && rem > S.warn - 1) { warned = true; sndWarn(); }
+        else if (rem <= S.warn - 1) warned = true;
+      }
+    }
+    render();
+  }
+  setInterval(tick, 100);
+
+  // ---- controls ----
+  function toggle() {
+    ensureAudio();
+    if (st.phase === 'done') return;
+    const now = Date.now();
+    if (!st.started) {
+      st.started = true; st.running = true; st.rot = 1; startPhase('answer', now + S.station * 1000); sndStart(); wake(true);
+    } else if (st.running) {
+      st.remaining = (st.phaseEnd - now) / 1000; st.running = false; wake(false);
+    } else {
+      st.phaseEnd = now + st.remaining * 1000; st.running = true; wake(true);
+    }
+    render();
+  }
+  function skip() {
+    if (!st.started || st.phase === 'done') return;
+    ensureAudio();
+    const now = Date.now();
+    const wasRunning = st.running;
+    st.running = true; advance(now, true);
+    if (!wasRunning && st.phase !== 'done') { st.running = false; st.remaining = phaseLen(st.phase); }
+    render();
+  }
+  function back() {
+    if (!st.started) return;
+    ensureAudio();
+    const now = Date.now();
+    if (st.phase === 'done') { st.done = false; st.rot = S.n; }
+    else if (st.phase === 'answer') {
+      // if well into this rotation, restart it; otherwise go to previous one
+      const elapsed = S.station - remainingNow(now);
+      if (elapsed < 3 && st.rot > 1) st.rot--;
+    } // in move phase: back returns to the rotation just finished
+    startPhase('answer', now + S.station * 1000);
+    if (!st.running) st.remaining = S.station;
+    render();
+  }
+  function reset() {
+    st = { started: false, running: false, rot: 1, phase: 'ready', phaseEnd: 0, remaining: 0, done: false };
+    wake(false); render();
+  }
+
+  $('startBtn').onclick = toggle;
+  $('skipBtn').onclick = skip;
+  $('backBtn').onclick = back;
+  $('resetBtn').onclick = () => {
+    if (!st.started) { reset(); return; }
+    $('confirmReset').hidden = false; $('controls').hidden = true;
+  };
+  $('confirmYes').onclick = () => { reset(); $('confirmReset').hidden = true; $('controls').hidden = false; };
+  $('confirmNo').onclick = () => { $('confirmReset').hidden = true; $('controls').hidden = false; };
+
+  $('soundBtn').onclick = () => { S.sound = !S.sound; ensureAudio(); save(); syncHdr(); if (S.sound) sndWarn(); };
+  $('focusBtn').onclick = () => { document.body.classList.toggle('focus'); syncHdr(); };
+  $('fsBtn').onclick = async () => {
+    try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
+    catch (e) { $('fsBtn').textContent = 'Full screen unavailable'; $('fsBtn').disabled = true; }
+  };
+  document.addEventListener('fullscreenchange', syncHdr);
+  function syncHdr() {
+    $('soundBtn').textContent = 'Sound: ' + (S.sound ? 'on' : 'off');
+    $('soundBtn').setAttribute('aria-pressed', S.sound);
+    $('focusBtn').textContent = document.body.classList.contains('focus') ? 'Show settings' : 'Hide settings';
+    if (!$('fsBtn').disabled) $('fsBtn').textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
+  }
+
+  function readInputs() {
+    const num = (id, lo, hi, d) => { const v = parseInt($(id).value, 10); return isNaN(v) ? d : Math.min(hi, Math.max(lo, v)); };
+    S.n = num('nStations', 1, 60, 25);
+    S.station = num('stationSec', 5, 1200, 90);
+    S.buffer = num('bufferSec', 0, 120, 10);
+    S.warn = num('warnSec', 0, 60, 10);
+    S.bufferOn = $('bufferOn').checked;
+    $('bufferSec').closest('.field').style.opacity = S.bufferOn ? 1 : .5;
+    save(); summary();
+    if ($('strip').children.length !== S.n) buildStrip();
+    render();
+  }
+  ['nStations', 'stationSec', 'bufferSec', 'warnSec'].forEach(id => $(id).addEventListener('input', readInputs));
+  $('bufferOn').addEventListener('change', readInputs);
+
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.code === 'Space') { e.preventDefault(); toggle(); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); skip(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); back(); }
+  });
+
+  // init inputs from saved settings
+  $('nStations').value = S.n; $('stationSec').value = S.station; $('bufferSec').value = S.buffer;
+  $('warnSec').value = S.warn; $('bufferOn').checked = S.bufferOn;
+  buildStrip(); readInputs(); syncHdr(); render();
+})();
+</script>
+</body>
+</html>
