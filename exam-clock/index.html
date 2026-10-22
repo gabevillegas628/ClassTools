@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>try{var t=localStorage.getItem("ctTheme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
 <title>Exam Room Clock</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -146,6 +147,7 @@ body.focus .settings, body.focus .keys, body.focus .brand { display: none; }
   <header>
     <p class="brand">Exam Room Clock</p>
     <div class="hdr-actions">
+      <button id="themeBtn" class="ghost">Theme: Auto</button>
       <button id="soundBtn" class="ghost">Sound: on</button>
       <button id="focusBtn" class="ghost">Hide setup</button>
       <button id="fsBtn" class="ghost">Full screen</button>
@@ -475,6 +477,27 @@ Raise your hand if you need anything</textarea></div>
   if (R.status === 'running' || R.status === 'over') wake(R.status === 'running');
   renderNotes(); syncHdr(); render();
   setInterval(tick, 200);
+})();
+</script>
+<script>
+(function () {
+  var KEY = 'ctTheme', order = ['auto', 'light', 'dark'], names = { auto: 'Auto', light: 'Light', dark: 'Dark' };
+  var btn = document.getElementById('themeBtn'); if (!btn) return;
+  var cur = 'auto';
+  try { var s = localStorage.getItem(KEY); if (order.indexOf(s) > -1) cur = s; } catch (e) {}
+  function apply(t) {
+    cur = t;
+    if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+    btn.textContent = 'Theme: ' + names[t];
+    btn.setAttribute('title', 'Switch between automatic, light and dark');
+  }
+  apply(cur);
+  btn.addEventListener('click', function () {
+    var t = order[(order.indexOf(cur) + 1) % order.length];
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+    apply(t);
+  });
+  window.addEventListener('storage', function (e) { if (e.key === KEY) apply(order.indexOf(e.newValue) > -1 ? e.newValue : 'auto'); });
 })();
 </script>
 </body>
