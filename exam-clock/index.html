@@ -23,6 +23,7 @@
   --caution-soft: #f7ead2;
   --final: #c0342c;
   --final-soft: #f8dcd9;
+  --corr: #7b2fa8;
   --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
   --body: "Barlow", "Segoe UI", system-ui, sans-serif;
 }
@@ -30,13 +31,13 @@
   :root:not([data-theme="light"]) {
     --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048;
     --accent: #7d9cff; --accent-soft: #1d2747; --caution: #f0a73a; --caution-soft: #3a2b12;
-    --final: #ff6a5f; --final-soft: #3d1a19; color-scheme: dark;
+    --final: #ff6a5f; --final-soft: #3d1a19; --corr: #d29bff; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048;
   --accent: #7d9cff; --accent-soft: #1d2747; --caution: #f0a73a; --caution-soft: #3a2b12;
-  --final: #ff6a5f; --final-soft: #3d1a19; color-scheme: dark;
+  --final: #ff6a5f; --final-soft: #3d1a19; --corr: #d29bff; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -167,6 +168,42 @@ body.focus .settings, body.focus .keys, body.focus .brand { display: none; }
 .mark.passed { opacity: 1; }
 .mark.passed::before { opacity: .2; }
 .mark.passed span { opacity: .35; }
+
+/* Corrections: side panel appears once one is posted; the clock column narrows and scales to fit */
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; flex: 1; }
+body.has-corr .main { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+body.has-corr .app { max-width: 1700px; }
+.stage { container-type: inline-size; }
+body.has-corr .countdown { font-size: clamp(4.5rem, 25cqi, 17rem); }
+body.has-corr .stage[data-level="over"] .countdown { font-size: clamp(3rem, 14cqi, 9rem); }
+body.has-corr .readout .v { font-size: clamp(1.5rem, 6cqi, 3.8rem); }
+.corrections { background: var(--surface); border: 3px solid var(--corr); border-radius: 14px; padding: clamp(14px, 2vw, 24px); display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+.corr-head { margin: 0; font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .1em; font-size: clamp(1.2rem, 2vw, 1.7rem); color: var(--corr); }
+.corr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; overflow-y: auto; align-content: start; }
+.corr-item { display: grid; gap: 4px; padding-top: 12px; border-top: 1px solid var(--line); }
+.corr-item:first-child { border-top: 0; padding-top: 0; }
+.corr-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.corr-q { font-family: var(--display); font-weight: 700; font-size: clamp(1.5rem, 2.6vw, 2.3rem); line-height: 1; color: var(--corr); }
+.corr-time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: clamp(.9rem, 1.3vw, 1.1rem); }
+.corr-tools { margin-left: auto; display: flex; gap: 4px; opacity: .3; transition: opacity .15s; }
+.corr-item:hover .corr-tools, .corr-tools:focus-within { opacity: 1; }
+.corr-tools button { padding: 3px 8px; font-size: .8rem; background: transparent; }
+.corr-tools button.armed { background: var(--final); border-color: var(--final); color: var(--surface); opacity: 1; }
+.corr-text { margin: 0; font-size: clamp(1.15rem, 2vw, 1.75rem); line-height: 1.3; overflow-wrap: anywhere; }
+.controls .corr-btn { border-color: var(--corr); color: var(--corr); font-weight: 600; }
+.corr-entry { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: var(--surface); border-top: 4px solid var(--corr); box-shadow: 0 -8px 30px rgba(0, 0, 0, .18);
+  padding-block: 14px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.corr-entry-in { max-width: 1400px; margin: 0 auto; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.corr-entry-label { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--corr); font-size: 1.15rem; }
+.corr-entry input { font: inherit; font-size: 1.25rem; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); min-width: 0; }
+.corr-entry input:focus-visible { outline: 3px solid var(--corr); outline-offset: 1px; }
+#corrQ { width: 7.5em; flex: none; }
+#corrText { flex: 1 1 320px; }
+.corr-entry button { padding: 11px 18px; font-size: 1.05rem; }
+.corr-entry .corr-post { background: var(--corr); border-color: var(--corr); color: var(--surface); font-weight: 600; }
+.corr-entry-hint { max-width: 1400px; margin: 6px auto 0; color: var(--muted); font-size: .85rem; }
+@media (max-width: 860px) { body.has-corr .main { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body>
@@ -182,6 +219,7 @@ body.focus .settings, body.focus .keys, body.focus .brand { display: none; }
     </div>
   </header>
 
+  <div class="main" id="main">
   <section class="stage" id="stage" data-level="ready" aria-live="polite">
     <div class="title-row">
       <h1 class="exam-title" id="titleOut">Exam 2</h1>
@@ -206,12 +244,18 @@ body.focus .settings, body.focus .keys, body.focus .brand { display: none; }
 
     <ul class="notes" id="notesOut"></ul>
   </section>
+  <aside class="corrections" id="corrPanel" hidden aria-live="polite">
+    <h2 class="corr-head">Corrections</h2>
+    <ol class="corr-list" id="corrList"></ol>
+  </aside>
+  </div>
 
   <div class="controls" id="controls">
     <button id="startBtn">Start exam</button>
     <button id="minusBtn" title="Remove 1 minute">− 1 min</button>
     <button id="plusBtn" title="Add 1 minute">+ 1 min</button>
     <button id="plus5Btn" title="Add 5 minutes">+ 5 min</button>
+    <button id="corrBtn" class="corr-btn">+ Correction</button>
     <button id="resetBtn">Reset</button>
   </div>
   <div class="confirm" id="confirmReset" hidden>
@@ -219,7 +263,7 @@ body.focus .settings, body.focus .keys, body.focus .brand { display: none; }
     <button class="danger" id="confirmYes">Yes, reset</button>
     <button id="confirmNo">Cancel</button>
   </div>
-  <div class="keys"><kbd>Space</kbd> start / pause &nbsp;·&nbsp; <kbd>+</kbd> / <kbd>−</kbd> add or remove a minute</div>
+  <div class="keys"><kbd>Space</kbd> start / pause &nbsp;·&nbsp; <kbd>+</kbd> / <kbd>−</kbd> add or remove a minute &nbsp;·&nbsp; <kbd>C</kbd> add a correction</div>
 
   <section class="settings" id="settings">
     <h2>Setup</h2>
@@ -248,6 +292,17 @@ Write your name and NetID on every page</textarea></div>
   </section>
 </div>
 
+<form class="corr-entry" id="corrForm" hidden autocomplete="off">
+  <div class="corr-entry-in">
+    <span class="corr-entry-label" id="corrFormLabel">New correction</span>
+    <input type="text" id="corrQ" placeholder="Q14" aria-label="Question or page" maxlength="24">
+    <input type="text" id="corrText" placeholder="What changed? e.g. Choice C should read ATP synthase" aria-label="Correction" maxlength="300">
+    <button type="submit" class="corr-post" id="corrPost">Post</button>
+    <button type="button" id="corrCancel">Cancel</button>
+  </div>
+  <div class="corr-entry-hint">Enter posts · Esc cancels · leave the question box empty for a general correction</div>
+</form>
+
 <script>
 (function () {
   const $ = id => document.getElementById(id);
@@ -256,7 +311,7 @@ Write your name and NetID on every page</textarea></div>
     notes: 'Phones in bag, Bags on the wall\nWrite your name and NetID on every page',
     sec: true, h24: false, sound: true };
   // run: status ready|running|paused|over, endAt ms, totalMs, remainingMs (paused), fired {min:true}
-  let R = { status: 'ready', endAt: 0, totalMs: 0, remainingMs: 0, fired: {} };
+  let R = { status: 'ready', endAt: 0, totalMs: 0, remainingMs: 0, fired: {}, corr: [] };
   try { const saved = JSON.parse(localStorage.getItem(KEY) || '{}'); Object.assign(S, saved.S || {}); if (saved.R) R = Object.assign(R, saved.R); } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ S, R })); } catch (e) {} };
 
@@ -367,8 +422,8 @@ Write your name and NetID on every page</textarea></div>
     save(); render();
   }
   function reset() {
-    R = { status: 'ready', endAt: 0, totalMs: 0, remainingMs: 0, fired: {} };
-    wake(false); $('banner').hidden = true; save(); render();
+    R = { status: 'ready', endAt: 0, totalMs: 0, remainingMs: 0, fired: {}, corr: [] };
+    wake(false); $('banner').hidden = true; save(); render(); renderCorr();
   }
 
   function level(rem) {
@@ -462,6 +517,64 @@ Write your name and NetID on every page</textarea></div>
     ul.hidden = !ul.children.length;
   }
 
+  // ---- corrections ----
+  let editingId = null;
+  const qParse = q => { const m = /^q?\s*(\d+)\s*([a-z]?)$/i.exec(q || ''); return m ? { n: +m[1], s: m[2].toLowerCase() } : null; };
+  const qLabel = q => { const m = qParse(q); return m ? 'Q' + m.n + m.s : q; };
+  // general corrections first, then questions in number order, then other labels (Page 3, Part B), each by post time
+  const corrRank = c => !c.q ? 0 : qParse(c.q) ? 1 : 2;
+  const sortCorr = list => list.slice().sort((a, b) => {
+    const ra = corrRank(a), rb = corrRank(b);
+    if (ra !== rb) return ra - rb;
+    if (ra === 1) { const x = qParse(a.q), y = qParse(b.q); if (x.n !== y.n) return x.n - y.n; if (x.s !== y.s) return x.s < y.s ? -1 : 1; }
+    return a.t - b.t;
+  });
+  function renderCorr() {
+    const list = Array.isArray(R.corr) ? R.corr : (R.corr = []);
+    const has = list.length > 0;
+    document.body.classList.toggle('has-corr', has);
+    $('corrPanel').hidden = !has;
+    const ol = $('corrList'); ol.innerHTML = '';
+    sortCorr(list).forEach(c => {
+      const li = document.createElement('li'); li.className = 'corr-item';
+      const top = document.createElement('div'); top.className = 'corr-top';
+      if (c.q) { const q = document.createElement('span'); q.className = 'corr-q'; q.textContent = qLabel(c.q); top.appendChild(q); }
+      const t = document.createElement('span'); t.className = 'corr-time'; t.innerHTML = 'Posted ' + fmtClock(new Date(c.t), false); top.appendChild(t);
+      const tools = document.createElement('span'); tools.className = 'corr-tools';
+      const eb = document.createElement('button'); eb.type = 'button'; eb.textContent = 'Edit'; eb.onclick = () => openCorr(c.id);
+      const db = document.createElement('button'); db.type = 'button'; db.textContent = 'Delete';
+      db.onclick = () => {
+        if (db.dataset.armed) { R.corr = R.corr.filter(x => x.id !== c.id); save(); renderCorr(); return; }
+        db.dataset.armed = '1'; db.textContent = 'Really delete?'; db.classList.add('armed');
+        setTimeout(() => { if (db.isConnected) { delete db.dataset.armed; db.textContent = 'Delete'; db.classList.remove('armed'); } }, 4000);
+      };
+      tools.append(eb, db); top.appendChild(tools);
+      const p = document.createElement('p'); p.className = 'corr-text'; p.textContent = c.text;
+      li.append(top, p); ol.appendChild(li);
+    });
+  }
+  function openCorr(id) {
+    const c = id ? R.corr.find(x => x.id === id) : null;
+    editingId = c ? c.id : null;
+    $('corrQ').value = c ? c.q : ''; $('corrText').value = c ? c.text : '';
+    $('corrFormLabel').textContent = c ? 'Edit correction' : 'New correction';
+    $('corrPost').textContent = c ? 'Save' : 'Post';
+    $('corrForm').hidden = false;
+    (c ? $('corrText') : $('corrQ')).focus();
+  }
+  function closeCorr() { $('corrForm').hidden = true; editingId = null; if (document.activeElement) document.activeElement.blur(); }
+  $('corrForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const q = $('corrQ').value.trim(), text = $('corrText').value.trim();
+    if (!text) { $('corrText').focus(); return; } // Enter in the question box moves on to the text box
+    if (editingId) { const c = R.corr.find(x => x.id === editingId); if (c) { c.q = q; c.text = text; } }
+    else R.corr.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), q, text, t: Date.now() });
+    save(); renderCorr(); closeCorr();
+  });
+  $('corrForm').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); closeCorr(); } });
+  $('corrCancel').onclick = closeCorr;
+  $('corrBtn').onclick = () => openCorr();
+
   // ---- inputs ----
   function readInputs() {
     S.title = $('titleIn').value.trim();
@@ -474,7 +587,7 @@ Write your name and NetID on every page</textarea></div>
     $('durField').hidden = S.mode !== 'duration'; $('endField').hidden = S.mode !== 'end';
     if (R.status === 'running') markFiredKeep();
     $('err').hidden = true;
-    save(); renderNotes(); render();
+    save(); renderNotes(); render(); renderCorr();
   }
   function markFiredKeep() { // when warning list changes mid-exam, don't re-sound ones already passed
     const rem = R.endAt - Date.now(), f = {};
@@ -509,6 +622,7 @@ Write your name and NetID on every page</textarea></div>
     if (e.code === 'Space') { e.preventDefault(); togglePause(); }
     else if (e.key === '+' || e.key === '=') adjust(1);
     else if (e.key === '-' || e.key === '_') adjust(-1);
+    else if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); openCorr(); }
   });
 
   // ---- init ----
@@ -517,7 +631,7 @@ Write your name and NetID on every page</textarea></div>
   $('modeEnd').checked = S.mode === 'end'; $('modeDur').checked = S.mode !== 'end';
   $('durField').hidden = S.mode !== 'duration'; $('endField').hidden = S.mode !== 'end';
   if (R.status === 'running' || R.status === 'over') wake(R.status === 'running');
-  renderNotes(); syncHdr(); render();
+  renderNotes(); syncHdr(); render(); renderCorr();
   setInterval(tick, 200);
 })();
 </script>
