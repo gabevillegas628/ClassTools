@@ -39,6 +39,7 @@
   --final: #ff6a5f; --final-soft: #3d1a19; color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px;
@@ -81,7 +82,16 @@ button:disabled { opacity: .45; cursor: default; }
 .stage[data-level="over"] .countdown { font-size: clamp(3.5rem, 13vw, 10rem); line-height: 1; }
 .overtime { font-family: var(--display); font-size: clamp(1.2rem, 3vw, 2rem); color: var(--final); font-variant-numeric: tabular-nums; }
 
-.bar { height: 10px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.bar-row { display: flex; align-items: center; gap: 14px; }
+.bar-row .bar { flex: 1; min-width: 0; }
+.bar-track { position: relative; flex: 1; min-width: 0; padding-bottom: 20px; }
+.bar-track .bar > i { transition: width .25s linear; }
+.marks { position: absolute; inset: 0; pointer-events: none; }
+.mark { position: absolute; top: -4px; width: 2px; height: 20px; margin-left: -1px; background: var(--fg); opacity: .35; border-radius: 1px; }
+.mark span { position: absolute; top: 22px; left: 50%; transform: translateX(-50%); font-size: .78rem; font-weight: 600; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
+.mark.passed { opacity: .15; }
+@media (prefers-reduced-motion: reduce) { .bar-track .bar > i { transition: none; } }
+.bar { height: 12px; background: var(--line); border-radius: 99px; overflow: hidden; }
 .bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; }
 .stage[data-level="caution"] .bar > i { background: var(--caution); }
 .stage[data-level="final"] .bar > i, .stage[data-level="over"] .bar > i { background: var(--final); }
@@ -139,6 +149,24 @@ body.focus .settings, body.focus .keys, body.focus .brand { display: none; }
   #startBtn { flex-basis: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .stage { transition: none; } }
+
+/* Thick draining bar: percentage rides inside the fill, warning ticks below */
+.bar-row { --barh: clamp(30px, 5vw, 56px); }
+.bar-track { padding-bottom: clamp(1.9rem, 3.2vw, 2.6rem); }
+.bar-row .bar { height: var(--barh); border-radius: 10px; position: relative; }
+.bar-row .bar > i { border-radius: 10px 0 0 10px; }
+.pct-in { position: absolute; top: 50%; transform: translate(-50%, -50%); z-index: 3; font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; font-size: clamp(1rem, 2.7vw, 2rem); line-height: 1; white-space: nowrap; color: var(--surface); }
+.pct-in.outside { color: var(--accent); transform: translateY(-50%); }
+.stage[data-level="ready"] .pct-in.outside, .stage[data-level="paused"] .pct-in.outside { color: var(--muted); }
+.stage[data-level="caution"] .pct-in.outside { color: var(--caution); }
+.stage[data-level="final"] .pct-in.outside, .stage[data-level="over"] .pct-in.outside { color: var(--final); }
+.marks { z-index: 2; }
+.mark { top: -7px; width: 0; height: auto; margin: 0; background: none; opacity: 1; border-radius: 0; }
+.mark::before { content: ""; position: absolute; left: -2px; top: 0; width: 4px; height: calc(var(--barh) + 16px); border-radius: 2px; background: var(--fg); opacity: .6; }
+.mark span { top: calc(var(--barh) + 14px); font-family: var(--display); font-size: clamp(.95rem, 1.9vw, 1.4rem); font-weight: 700; letter-spacing: .02em; color: var(--fg); }
+.mark.passed { opacity: 1; }
+.mark.passed::before { opacity: .2; }
+.mark.passed span { opacity: .35; }
 </style>
 </head>
 <body>
@@ -166,7 +194,7 @@ body.focus .settings, body.focus .keys, body.focus .brand { display: none; }
       <div class="overtime" id="overtime" hidden></div>
     </div>
 
-    <div class="bar"><i id="barFill"></i></div>
+    <div class="bar-row"><div class="bar-track"><div class="bar"><i id="barFill"></i><span class="pct-in" id="pctOut">100% left</span></div><div class="marks" id="marks" aria-hidden="true"></div></div></div>
 
     <div class="readouts">
       <div class="readout"><div class="label">Current time</div><div class="v" id="nowOut">—</div></div>
@@ -208,9 +236,8 @@ body.focus .settings, body.focus .keys, body.focus .brand { display: none; }
       <div class="field" id="endField" hidden><label for="endIn">Ends at</label><input type="time" id="endIn" value="11:20"></div>
       <div class="field"><label for="warnIn">Warnings at (minutes left)</label><input type="text" id="warnIn" value="30, 15, 5, 1" inputmode="numeric"></div>
       <div class="field wide"><label for="notesIn">Notes shown on screen (one per line)</label>
-        <textarea id="notesIn">Phones off and put away
-Write your name and NetID on every page
-Raise your hand if you need anything</textarea></div>
+        <textarea id="notesIn">Phones in bag, Bags on the wall
+Write your name and NetID on every page</textarea></div>
     </div>
     <div class="checks">
       <label class="check"><input type="checkbox" id="secIn" checked> Show seconds on the countdown</label>
@@ -226,7 +253,7 @@ Raise your hand if you need anything</textarea></div>
   const $ = id => document.getElementById(id);
   const KEY = 'examRoomClock';
   const S = { title: 'Exam 2', mode: 'duration', dur: 80, end: '11:20', warn: '30, 15, 5, 1',
-    notes: 'Phones off and put away\nWrite your name and NetID on every page\nRaise your hand if you need anything',
+    notes: 'Phones in bag, Bags on the wall\nWrite your name and NetID on every page',
     sec: true, h24: false, sound: true };
   // run: status ready|running|paused|over, endAt ms, totalMs, remainingMs (paused), fired {min:true}
   let R = { status: 'ready', endAt: 0, totalMs: 0, remainingMs: 0, fired: {} };
@@ -394,7 +421,22 @@ Raise your hand if you need anything</textarea></div>
 
     const total = R.status === 'ready' ? Math.max(0, rem) : R.totalMs;
     const elapsed = R.status === 'ready' ? 0 : Math.max(0, total - Math.max(0, rem));
-    $('barFill').style.width = (total ? Math.min(100, elapsed / total * 100) : 0).toFixed(2) + '%';
+    const remFrac = R.status === 'over' ? 0 : total ? Math.max(0, Math.min(1, Math.max(0, rem) / total)) : 1;
+    $('barFill').style.width = (remFrac * 100).toFixed(2) + '%';
+    const markKey = total + '|' + S.warn;
+    if (markKey !== render.markKey) {
+      render.markKey = markKey;
+      $('marks').innerHTML = total ? warnList().filter(w => w * 60000 < total).map(w =>
+        '<div class="mark" data-w="' + w + '" style="left:' + (w * 60000 / total * 100).toFixed(3) + '%"><span>' + w + 'm</span></div>').join('') : '';
+    }
+    for (const m of $('marks').children) m.classList.toggle('passed', R.status !== 'ready' && rem <= m.dataset.w * 60000);
+    const leftPct = R.status === 'over' ? 0 : total ? Math.max(0, Math.min(100, Math.ceil(Math.max(0, rem) / total * 100))) : 100;
+    const lab = $('pctOut'), bw = lab.parentElement.clientWidth, fpx = bw * remFrac;
+    lab.textContent = leftPct + '% left';
+    const inside = lab.offsetWidth + 28 <= fpx;
+    lab.classList.toggle('outside', !inside);
+    if (inside) { lab.style.right = 'auto'; lab.style.left = Math.round(fpx / 2) + 'px'; }
+    else { lab.style.right = 'auto'; lab.style.left = Math.round(fpx + 12) + 'px'; }
 
     $('nowOut').innerHTML = fmtClock(new Date(now), false);
     $('endsLabel').textContent = R.status === 'ready' ? 'Would end at' : R.status === 'paused' ? 'Ends (if resumed now)' : 'Ends at';
