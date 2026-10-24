@@ -11,16 +11,16 @@
 <style>
 :root {
   --bg: #eff1f5; --surface: #ffffff; --fg: #141a2a; --muted: #5d6680; --line: #d4d9e4;
-  --accent: #2547a8; --teal: #0d7563;
+  --accent: #2547a8; --teal: #0d7563; --violet: #5b3fc4;
   --display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --body: "Barlow", "Segoe UI", system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048;
-    --accent: #7d9cff; --teal: #3cc3a6; color-scheme: dark; }
+    --accent: #7d9cff; --teal: #3cc3a6; --violet: #a99bff; color-scheme: dark; }
 }
 :root[data-theme="dark"] { --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048;
-    --accent: #7d9cff; --teal: #3cc3a6; color-scheme: dark; }
+    --accent: #7d9cff; --teal: #3cc3a6; --violet: #a99bff; color-scheme: dark; }
 * { box-sizing: border-box; }
 header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 header > div { min-width: 0; }
@@ -47,7 +47,7 @@ footer { color: var(--muted); font-size: .85rem; }
   <header>
     <div>
     <h1>Classroom Tools</h1>
-    <p class="lead">Timers and displays for the lab and lecture hall. Each one runs in the browser and works full screen on a projector.</p>
+    <p class="lead">Timers, displays and data tools for the lab and lecture hall. Each one runs in the browser and works full screen on a projector.</p>
     </div>
     <button id="themeBtn">Theme: Auto</button>
   </header>
@@ -59,6 +59,10 @@ footer { color: var(--muted); font-size: .85rem; }
     <a class="tool" href="practical-timer/" style="--c: var(--teal)">
       <h2>Practical Station Timer</h2>
       <p>Timed rotations for lab practicals, with move time between stations and progress tracking.</p>
+    </a>
+    <a class="tool" href="distribution-inspector/" style="--c: var(--violet)">
+      <h2>Distribution Inspector</h2>
+      <p>Histogram and summary stats for a column of scores from a CSV, with a normal-curve overlay and PNG export.</p>
     </a>
   </div>
   <footer>Settings are saved in this browser only.</footer>

@@ -1,0 +1,1538 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>try{var t=localStorage.getItem("ctTheme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
+<title>Distribution Inspector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=Barlow:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Page shell (header + theme) matches the other ClassTools pages. The tool itself is styled inline in the React code below, from the PALETTES object. */
+:root {
+  --bg: #eff1f5; --surface: #ffffff; --fg: #141a2a; --muted: #5d6680; --line: #d4d9e4; --accent: #4f46e5;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048; --accent: #818cf8; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048; --accent: #818cf8; color-scheme: dark;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: "DM Sans", system-ui, sans-serif;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 28px;
+}
+.app { max-width: 1150px; margin: 0 auto; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.brand { font-family: var(--display); font-weight: 600; font-size: 1.1rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.hdr-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+header button { font: 500 15px var(--body); cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--fg); padding: 9px 14px; }
+header button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.colbtn:focus-visible { outline-offset: -3px; }
+#loading { padding: 60px 0; text-align: center; font-size: 13px; color: var(--muted); }
+</style>
+<!-- Libraries from CDN. Babel compiles the JSX below in the browser, so there is no build step. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.15.4/Recharts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <header>
+    <p class="brand">Distribution Inspector</p>
+    <div class="hdr-actions">
+      <button id="themeBtn">Theme: Auto</button>
+    </div>
+  </header>
+  <div id="root"><div id="loading">Loading…</div></div>
+</div>
+
+<script>
+(function () {
+  var KEY = 'ctTheme', order = ['auto', 'light', 'dark'], names = { auto: 'Auto', light: 'Light', dark: 'Dark' };
+  var btn = document.getElementById('themeBtn'); if (!btn) return;
+  var cur = 'auto';
+  try { var s = localStorage.getItem(KEY); if (order.indexOf(s) > -1) cur = s; } catch (e) {}
+  function apply(t) {
+    cur = t;
+    if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+    btn.textContent = 'Theme: ' + names[t];
+    btn.setAttribute('title', 'Switch between automatic, light and dark');
+  }
+  apply(cur);
+  btn.addEventListener('click', function () {
+    var t = order[(order.indexOf(cur) + 1) % order.length];
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+    apply(t);
+  });
+  window.addEventListener('storage', function (e) { if (e.key === KEY) apply(order.indexOf(e.newValue) > -1 ? e.newValue : 'auto'); });
+})();
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useRef, useCallback, useEffect, StrictMode } = React;
+const { createRoot, flushSync } = ReactDOM;
+const {
+  ComposedChart, Bar, Line, XAxis, YAxis,
+  CartesianGrid, Tooltip, ResponsiveContainer, Customized
+} = Recharts;
+
+// ── Theme ─────────────────────────────────────────────────────────────────────
+// The page follows the shared ClassTools theme (Auto / Light / Dark), which the
+// header button stores on <html data-theme>. Colours must be 6-digit hex because
+// some code appends an alpha suffix (e.g. color + "55").
+const PALETTES = {
+  dark: {
+    bg: "#0e1220", surface: "#161b2c", raised: "#1f2638", line: "#283048", lineStrong: "#3a4462",
+    fg: "#e5e9f3", strong: "#f4f6fb", soft: "#b4bbd0", muted: "#939bb4",
+    accent: "#818cf8", bar: "#6366f1", curve: "#fbbf24", mean: "#38bdf8", median: "#34d399",
+    skew: "#f472b6", range: "#94a3b8", violet: "#a78bfa",
+    green: "#34d399", amber: "#fbbf24", red: "#f87171",
+    overlay: "rgba(0, 0, 0, 0.65)", shadow: "0 4px 16px rgba(0, 0, 0, 0.45)",
+  },
+  light: {
+    bg: "#eff1f5", surface: "#ffffff", raised: "#e9ecf3", line: "#d4d9e4", lineStrong: "#b9c0d0",
+    fg: "#141a2a", strong: "#0b1020", soft: "#3f4760", muted: "#5d6680",
+    accent: "#4f46e5", bar: "#6366f1", curve: "#d97706", mean: "#0369a1", median: "#047857",
+    skew: "#be185d", range: "#5d6680", violet: "#6d28d9",
+    green: "#047857", amber: "#b45309", red: "#dc2626",
+    overlay: "rgba(20, 26, 42, 0.45)", shadow: "0 4px 16px rgba(20, 26, 42, 0.15)",
+  },
+};
+
+function currentThemeName() {
+  const t = document.documentElement.dataset.theme;
+  if (t === "light" || t === "dark") return t;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function useThemeName() {
+  const [name, setName] = useState(currentThemeName);
+  useEffect(() => {
+    const update = () => setName(currentThemeName());
+    const observer = new MutationObserver(update);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", update);
+    return () => { observer.disconnect(); mq.removeEventListener("change", update); };
+  }, []);
+  return name;
+}
+
+// ── CSV parsing ───────────────────────────────────────────────────────────────
+function parseCSVRow(line) {
+  const fields = [];
+  let cur = "";
+  let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuote && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuote = !inQuote;
+    } else if (ch === "," && !inQuote) {
+      fields.push(cur.trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  fields.push(cur.trim());
+  return fields;
+}
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
+  if (lines.length < 2) return { headers: [], rows: [] };
+  const headers = parseCSVRow(lines[0]);
+  const rows = lines.slice(1).map(parseCSVRow);
+  return { headers, rows };
+}
+
+function extractColumn(rows, colIndex) {
+  return rows.map(r => parseFloat(r[colIndex])).filter(v => !isNaN(v));
+}
+
+const MIN_VALUES = 5; // a column needs at least this many numbers to be plotted
+
+// Per-column summary for the column picker: how many numbers, and a tiny histogram
+function summarizeColumns(headers, rows) {
+  return headers.map((h, i) => {
+    const values = extractColumn(rows, i);
+    const usable = values.length >= MIN_VALUES;
+    let spark = null;
+    if (usable) {
+      let min = Infinity, max = -Infinity;
+      for (const v of values) { if (v < min) min = v; if (v > max) max = v; }
+      const k = 12, span = (max - min) || 1;
+      spark = new Array(k).fill(0);
+      for (const v of values) spark[Math.min(k - 1, Math.floor((v - min) / span * k))]++;
+    }
+    return { name: h || `Column ${i + 1}`, count: values.length, usable, spark };
+  });
+}
+
+// ── Stats helpers ─────────────────────────────────────────────────────────────
+
+function computeStats(arr) {
+  const n = arr.length;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mean = arr.reduce((s, v) => s + v, 0) / n;
+  const median = n % 2 === 0
+    ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+    : sorted[Math.floor(n / 2)];
+  const variance = arr.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+  const std = Math.sqrt(variance);
+  const skew = std > 0 ? arr.reduce((s, v) => s + ((v - mean) / std) ** 3, 0) / n : 0;
+  const kurt = std > 0 ? arr.reduce((s, v) => s + ((v - mean) / std) ** 4, 0) / n - 3 : 0;
+  const q1 = sorted[Math.floor(n * 0.25)];
+  const q3 = sorted[Math.floor(n * 0.75)];
+  const iqr = q3 - q1;
+  // Freedman-Diaconis bin width; fall back to Scott's rule if IQR is zero
+  const fdBin = iqr > 0
+    ? Math.max(0.5, parseFloat((2 * iqr / Math.cbrt(n)).toFixed(2)))
+    : Math.max(0.5, parseFloat((3.5 * std / Math.cbrt(n)).toFixed(2)));
+  return { n, mean, median, std, skew, kurt, min: sorted[0], max: sorted[n - 1], q1, q3, iqr, fdBin };
+}
+
+function computeBins(arr, binSize, stats) {
+  if (!binSize || binSize <= 0) return [];
+  const start = Math.floor(stats.min / binSize) * binSize;
+  const end = Math.ceil(stats.max / binSize) * binSize + binSize;
+  const normalPDF = x => Math.exp(-0.5 * ((x - stats.mean) / stats.std) ** 2) / (stats.std * Math.sqrt(2 * Math.PI));
+  const bins = [];
+  for (let s = start; s < end; s += binSize) {
+    const count = arr.filter(v => v >= s && v < s + binSize).length;
+    const mid = s + binSize / 2;
+    bins.push({
+      label: String(parseFloat(mid.toFixed(2))),
+      range: `${parseFloat(s.toFixed(2))}–${parseFloat((s + binSize).toFixed(2))}`,
+      count,
+      curve: parseFloat((normalPDF(mid) * arr.length * binSize).toFixed(3)),
+    });
+  }
+  return bins;
+}
+
+// ── Local analysis (KDE modality + skewness normality) ────────────────────────
+
+/**
+ * Gaussian KDE evaluated over a grid, returns array of density values.
+ * Bandwidth via Silverman's rule: h = 1.06 * σ * n^(-1/5)
+ */
+function computeKDE(data, stats, gridSize = 300) {
+  const h = Math.max(1e-9, 1.06 * stats.std * Math.pow(data.length, -0.2));
+  const lo = stats.min - 3 * h;
+  const hi = stats.max + 3 * h;
+  const step = (hi - lo) / gridSize;
+  const density = [];
+  for (let i = 0; i <= gridSize; i++) {
+    const x = lo + i * step;
+    const d = data.reduce((sum, xi) =>
+      sum + Math.exp(-0.5 * ((x - xi) / h) ** 2), 0
+    ) / (data.length * h * Math.sqrt(2 * Math.PI));
+    density.push(d);
+  }
+  return density;
+}
+
+/**
+ * Counts significant local maxima in the KDE density array.
+ * A peak is significant if it exceeds `threshold` fraction of the global max.
+ * Adjacent peaks must be separated by a valley that drops below peakSep * peak height.
+ */
+function countKDEPeaks(density, threshold = 0.12, peakSep = 0.6) {
+  const maxD = Math.max(...density);
+  if (maxD === 0) return 1;
+
+  // Find all local maxima above threshold
+  const rawPeaks = [];
+  for (let i = 1; i < density.length - 1; i++) {
+    if (density[i] > density[i - 1] && density[i] > density[i + 1] && density[i] >= maxD * threshold) {
+      rawPeaks.push({ idx: i, val: density[i] });
+    }
+  }
+
+  if (rawPeaks.length <= 1) return rawPeaks.length || 1;
+
+  // Merge peaks that aren't separated by a deep enough valley
+  const significant = [rawPeaks[0]];
+  for (let k = 1; k < rawPeaks.length; k++) {
+    const prev = significant[significant.length - 1];
+    const curr = rawPeaks[k];
+    const valleyMin = Math.min(...density.slice(prev.idx, curr.idx + 1));
+    const minPeak = Math.min(prev.val, curr.val);
+    if (valleyMin < minPeak * peakSep) {
+      significant.push(curr);
+    } else {
+      // Absorb into the taller peak
+      if (curr.val > prev.val) significant[significant.length - 1] = curr;
+    }
+  }
+  return significant.length;
+}
+
+function detectModality(data, stats) {
+  const density = computeKDE(data, stats);
+  const peaks = countKDEPeaks(density);
+
+  if (peaks <= 1) return { label: "unimodal", note: "A single dominant peak was detected via kernel density estimation." };
+  if (peaks === 2) return { label: "likely bimodal", note: "Two distinct peaks were detected via kernel density estimation, suggesting two subgroups or processes." };
+  return { label: "likely multimodal", note: `${peaks} peaks detected via kernel density estimation, suggesting multiple subgroups or underlying processes.` };
+}
+
+function assessNormality(stats) {
+  const s = stats.skew;
+  const k = stats.kurt; // excess kurtosis
+  if (Math.abs(s) < 0.5 && Math.abs(k) < 1) return "approximately normal";
+  if (k > 3) return "heavy-tailed";
+  if (s >= 1.0) return "heavy positive skew";
+  if (s <= -1.0) return "heavy negative skew";
+  if (s >= 0.5) return "slight positive skew";
+  if (s <= -0.5) return "slight negative skew";
+  return "approximately normal";
+}
+
+function generateInterpretation(stats, modality, normalityAssessment) {
+  const parts = [];
+
+  parts.push(
+    `The distribution spans ${stats.min} to ${stats.max} with a mean of ${stats.mean.toFixed(2)} and standard deviation of ${stats.std.toFixed(2)}.`
+  );
+
+  if (modality.label !== "unimodal") {
+    parts.push(
+      `The shape appears ${modality.label}, which may indicate multiple subgroups or distinct processes within the data.`
+    );
+  } else if (normalityAssessment === "approximately normal") {
+    parts.push("The distribution is roughly symmetric and bell-shaped around the mean.");
+  } else if (normalityAssessment === "heavy-tailed") {
+    parts.push("The distribution has heavier tails than a normal distribution, with more extreme values than expected.");
+  } else {
+    const dir = stats.skew > 0 ? "right (positive)" : "left (negative)";
+    parts.push(`The distribution is skewed ${dir}, meaning the tail extends ${stats.skew > 0 ? "toward higher" : "toward lower"} values.`);
+  }
+
+  const meanMedianGap = Math.abs(stats.mean - stats.median);
+  if (stats.std > 0 && meanMedianGap / stats.std > 0.15) {
+    const dir = stats.mean > stats.median ? "above" : "below";
+    parts.push(
+      `The mean (${stats.mean.toFixed(2)}) sits ${dir} the median (${stats.median.toFixed(2)}), consistent with the observed skew.`
+    );
+  }
+
+  return parts.join(" ");
+}
+
+function runLocalAnalysis(data, stats) {
+  const modality = detectModality(data, stats);
+  const suggestedBinWidth = stats.fdBin;
+  const normalityAssessment = assessNormality(stats);
+  const interpretation = generateInterpretation(stats, modality, normalityAssessment);
+  return {
+    modality: modality.label,
+    modalityNote: modality.note,
+    suggestedBinWidth,
+    normalityAssessment,
+    interpretation,
+  };
+}
+
+// ── Stat colours ──────────────────────────────────────────────────────────────
+function modalityColor(C, modality) {
+  return { "unimodal": C.green, "likely bimodal": C.amber, "likely multimodal": C.red }[modality] ?? C.muted;
+}
+
+// Palette key used for each stat (modality is coloured by its value instead)
+const STAT_COLOR_KEY = {
+  n: "accent", mean: "mean", median: "median", sd: "amber", skew: "skew",
+  min: "range", max: "range", shape: "soft",
+};
+
+function statColor(C, key, analysis) {
+  return key === "modality" ? modalityColor(C, analysis?.modality) : C[STAT_COLOR_KEY[key]];
+}
+
+// ── PNG Export ────────────────────────────────────────────────────────────────
+const EXPORT_SIZES = [
+  { id: "large-rect",  label: "Large Rectangle", w: 1600, h: 900,  pvW: 60, pvH: 34, modalW: 200, modalH: 112 },
+  { id: "small-rect",  label: "Small Rectangle",  w: 800,  h: 450,  pvW: 44, pvH: 25, modalW: 200, modalH: 112 },
+  { id: "large-sq",    label: "Large Square",     w: 1200, h: 1200, pvW: 38, pvH: 38, modalW: 140, modalH: 140 },
+  { id: "small-sq",    label: "Small Square",     w: 600,  h: 600,  pvW: 28, pvH: 28, modalW: 140, modalH: 140 },
+];
+
+const EXPORT_STAT_OPTIONS = [
+  { key: "n",        label: "n" },
+  { key: "mean",     label: "Mean" },
+  { key: "median",   label: "Median" },
+  { key: "sd",       label: "SD" },
+  { key: "skew",     label: "Skew" },
+  { key: "min",      label: "Min" },
+  { key: "max",      label: "Max" },
+  { key: "modality", label: "Modality" },
+  { key: "shape",    label: "Shape" },
+];
+
+// ── Off-screen chart renderer (fixed size, window-independent) ────────────────
+function OffscreenChart({ width, height, bins, stats, binSize, et }) {
+  return (
+    <ComposedChart data={bins} width={width} height={height} margin={{ top: 28, right: 16, left: 0, bottom: 22 }}>
+      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={et.line} />
+      <XAxis dataKey="label" tick={{ fontSize: 12, fill: et.muted }} stroke={et.lineStrong} interval="preserveStartEnd" />
+      <YAxis tick={{ fontSize: 12, fill: et.muted }} stroke={et.lineStrong} label={{ value: "Count", angle: -90, position: "insideLeft", offset: 10, fontSize: 13, fill: et.muted }} allowDecimals={false} />
+      <Customized component={MeanCustomLine} mean={stats.mean} binSize={binSize} dataMin={stats.min}
+        stroke={et.mean} label={`μ=${stats.mean.toFixed(1)}`} pillBg={et.surface} />
+      <Bar dataKey="count" fill={et.bar} fillOpacity={0.8} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+      <Line dataKey="curve" type="monotone" stroke={et.curve} strokeWidth={2} dot={false} isAnimationActive={false} />
+    </ComposedChart>
+  );
+}
+
+async function exportPNG({ titleText, sizeId, statKeys, stats, analysis, bins, binSize, themeName = "dark" }) {
+  const et = PALETTES[themeName] ?? PALETTES.dark;
+  const size = EXPORT_SIZES.find(s => s.id === sizeId) ?? EXPORT_SIZES[0];
+  const W = size.w, H = size.h;
+
+  const pad       = Math.round(Math.max(24, W * 0.025));
+  const titleSize = Math.round(Math.max(14, W * 0.02));
+  const titleAreaH = titleSize + pad;
+
+  const statValues = {
+    n:        String(stats.n),
+    mean:     stats.mean.toFixed(2),
+    median:   stats.median.toFixed(2),
+    sd:       stats.std.toFixed(2),
+    skew:     stats.skew.toFixed(3),
+    min:      String(stats.min),
+    max:      String(stats.max),
+    modality: analysis?.modality ?? "",
+    shape:    analysis?.normalityAssessment ?? "",
+  };
+  const legendItems = statKeys
+    .filter(k => statValues[k])
+    .map(k => ({ label: EXPORT_STAT_OPTIONS.find(o => o.key === k)?.label ?? k, value: statValues[k], color: statColor(et, k, analysis) }));
+
+  const pillH  = Math.round(Math.min(H * 0.065, 54));
+  const legendH = legendItems.length > 0 ? pillH + Math.round(pad * 0.6) : 0;
+  const legendGap = legendH > 0 ? Math.round(pad * 0.35) : 0;
+  const legendBottomPad = legendH > 0 ? Math.round(pad * 0.5) : 0;
+  const chartY  = titleAreaH;
+  const chartH  = H - chartY - pad - legendGap - legendH - legendBottomPad;
+  const chartW  = W - 2 * pad;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = et.surface;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = et.strong;
+  ctx.font = `bold ${titleSize}px system-ui, -apple-system, sans-serif`;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  ctx.fillText(titleText || "Distribution", pad, Math.round(pad * 0.6));
+
+  // Render chart at exact export dimensions, independent of browser window size
+  const offscreen = document.createElement("div");
+  offscreen.style.cssText = "position:fixed;left:-9999px;top:-9999px;pointer-events:none;";
+  document.body.appendChild(offscreen);
+  const offRoot = createRoot(offscreen);
+  flushSync(() => {
+    offRoot.render(<OffscreenChart width={chartW} height={chartH} bins={bins} stats={stats} binSize={binSize} et={et} />);
+  });
+  const svgEl = offscreen.querySelector("svg");
+  const xml = svgEl ? new XMLSerializer().serializeToString(svgEl) : null;
+  offRoot.unmount();
+  document.body.removeChild(offscreen);
+  if (!xml) return;
+
+  const url = URL.createObjectURL(new Blob([xml], { type: "image/svg+xml;charset=utf-8" }));
+  await new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => { ctx.drawImage(img, pad, chartY, chartW, chartH); URL.revokeObjectURL(url); resolve(); };
+    img.onerror = resolve;
+    img.src = url;
+  });
+
+  // Legend pills
+  if (legendItems.length > 0) {
+    const lFontVal = Math.min(Math.round(pillH * 0.38), 16);
+    const lFontLbl = Math.min(Math.round(pillH * 0.26), 10);
+    const pillPadX = Math.round(pillH * 0.4);
+    const gap      = Math.round(W * 0.008);
+    const legendY  = chartY + chartH + legendGap;
+    let cx = pad;
+
+    ctx.textBaseline = "alphabetic";
+    for (const { label, value, color } of legendItems) {
+      ctx.font = `bold ${lFontVal}px 'DM Mono', monospace`;
+      const vW = ctx.measureText(value).width;
+      ctx.font = `${lFontLbl}px system-ui`;
+      const lW = ctx.measureText(label.toUpperCase()).width;
+      const pw = Math.max(vW, lW) + 2 * pillPadX;
+      if (cx + pw > W - pad) break;
+
+      ctx.fillStyle = et.bg;
+      ctx.strokeStyle = color + "55";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(cx, legendY, pw, pillH, 6);
+      ctx.fill(); ctx.stroke();
+
+      ctx.textAlign = "center";
+      ctx.fillStyle = et.muted;
+      ctx.font = `${lFontLbl}px system-ui`;
+      ctx.fillText(label.toUpperCase(), cx + pw / 2, legendY + lFontLbl + Math.round(pillH * 0.12));
+
+      ctx.fillStyle = color;
+      ctx.font = `bold ${lFontVal}px 'DM Mono', monospace`;
+      ctx.fillText(value, cx + pw / 2, legendY + pillH - Math.round(pillH * 0.15));
+
+      cx += pw + gap;
+    }
+  }
+
+  canvas.toBlob(blob => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${(titleText || "histogram").replace(/\s+/g, "_")}.png`;
+    a.click();
+  }, "image/png");
+}
+
+// ── Modal chart preview (live data, correct aspect ratio) ─────────────────────
+function ModalChartPreview({ previewW, previewH, bins, stats, binSize, active, et }) {
+  return (
+    <ComposedChart data={bins} width={previewW} height={previewH} margin={{ top: 6, right: 4, left: 4, bottom: 4 }}>
+      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={et.line} />
+      <XAxis dataKey="label" hide />
+      <YAxis hide allowDecimals={false} />
+      <Customized component={MeanCustomLine} mean={stats.mean} binSize={binSize} dataMin={stats.min}
+        stroke={et.mean} />
+      <Bar dataKey="count" fill={et.bar} fillOpacity={active ? 0.85 : 0.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+      <Line dataKey="curve" type="monotone" stroke={et.curve} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+    </ComposedChart>
+  );
+}
+
+// ── Export modal ──────────────────────────────────────────────────────────────
+function ExportModal({ open, onClose, onExport, bins, stats, analysis, binSize, C, pageTheme }) {
+  const [sizeId, setSizeId] = useState("large-rect");
+  const [statKeys, setStatKeys] = useState(EXPORT_STAT_OPTIONS.map(o => o.key));
+  // null = match the page theme until the user picks one
+  const [exportChoice, setExportChoice] = useState(null);
+  const exportTheme = exportChoice ?? pageTheme;
+  const et = PALETTES[exportTheme];
+  if (!open) return null;
+
+  const toggleStat = key =>
+    setStatKeys(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  const allSelected = statKeys.length === EXPORT_STAT_OPTIONS.length;
+
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: "fixed", inset: 0, background: C.overlay, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
+    >
+      <div role="dialog" aria-label="Export PNG" style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 28, width: 520, maxWidth: "92vw", maxHeight: "90vh", overflowY: "auto", boxShadow: C.shadow }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: C.strong }}>Export PNG</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 6, overflow: "hidden" }}>
+              {[["Dark", "dark"], ["Light", "light"]].map(([label, val]) => (
+                <button key={label} onClick={() => setExportChoice(val)} style={{
+                  background: exportTheme === val ? C.raised : "transparent",
+                  border: "none", color: exportTheme === val ? C.fg : C.muted,
+                  fontSize: 11, fontWeight: 600, padding: "5px 12px", cursor: "pointer",
+                  fontFamily: "inherit", transition: "all 0.12s",
+                }}>{label}</button>
+              ))}
+            </div>
+            <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 22, lineHeight: 1, padding: "0 2px" }}>×</button>
+          </div>
+        </div>
+
+        {/* Size selector */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: 10 }}>Size</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+            {EXPORT_SIZES.map(s => {
+              const active = sizeId === s.id;
+              return (
+                <div key={s.id} onClick={() => setSizeId(s.id)} style={{
+                  background: active ? C.raised : C.bg,
+                  border: `1.5px solid ${active ? C.bar : C.line}`,
+                  borderRadius: 8, padding: "10px 10px 8px", cursor: "pointer",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+                  transition: "border-color 0.15s",
+                }}>
+                  <div style={{ borderRadius: 4, overflow: "hidden", border: `1px solid ${C.line}`, lineHeight: 0, background: et.surface }}>
+                    {bins && stats ? (
+                      <ModalChartPreview previewW={s.modalW} previewH={s.modalH} bins={bins} stats={stats} binSize={binSize} active={active} et={et} />
+                    ) : (
+                      <div style={{ width: s.modalW, height: s.modalH, background: et.surface }} />
+                    )}
+                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: active ? C.fg : C.muted, textAlign: "center", lineHeight: 1.3 }}>{s.label}</div>
+                  <div style={{ fontSize: 9, color: C.muted, fontFamily: "'DM Mono', monospace" }}>{s.w}×{s.h}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Legend stats */}
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <div style={{ fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.14em" }}>Legend stats</div>
+            <button
+              onClick={() => setStatKeys(allSelected ? [] : EXPORT_STAT_OPTIONS.map(o => o.key))}
+              style={{ fontSize: 10, color: C.muted, background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", textDecoration: "underline" }}
+            >
+              {allSelected ? "deselect all" : "select all"}
+            </button>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {EXPORT_STAT_OPTIONS.map(opt => {
+              const active = statKeys.includes(opt.key);
+              const color = statColor(C, opt.key, analysis);
+              return (
+                <div key={opt.key} onClick={() => toggleStat(opt.key)} style={{
+                  background: active ? C.raised : C.bg,
+                  border: `1px solid ${active ? color + "55" : C.line}`,
+                  borderRadius: 6, padding: "5px 12px", cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 6, transition: "all 0.12s",
+                }}>
+                  <div style={{ width: 7, height: 7, borderRadius: 2, background: active ? color : C.lineStrong, flexShrink: 0, transition: "background 0.12s" }} />
+                  <span style={{ fontSize: 11, color: active ? C.fg : C.muted, fontWeight: 500 }}>{opt.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Export button */}
+        <button
+          onClick={() => onExport({ sizeId, statKeys, themeName: exportTheme })}
+          style={{ width: "100%", background: "linear-gradient(135deg, #6366f1 0%, #818cf8 100%)", border: "none", borderRadius: 8, color: "white", fontFamily: "inherit", fontWeight: 600, fontSize: 14, padding: "13px", cursor: "pointer" }}
+        >
+          ↓ Export PNG
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Stat pill with tooltip ────────────────────────────────────────────────────
+function StatPill({ label, value, color, tip, small, C }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      style={{ position: "relative" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {hovered && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 7px)", left: "50%",
+          transform: "translateX(-50%)", background: C.raised,
+          border: `1px solid ${C.lineStrong}`, borderRadius: 6, padding: "7px 11px",
+          fontSize: 11, color: C.soft, zIndex: 20, pointerEvents: "none",
+          width: 190, textAlign: "center", lineHeight: 1.55,
+          boxShadow: C.shadow,
+        }}>
+          {tip}
+          <div style={{
+            position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)",
+            borderLeft: "5px solid transparent", borderRight: "5px solid transparent",
+            borderTop: `5px solid ${C.lineStrong}`,
+          }} />
+        </div>
+      )}
+      <div style={{ background: C.surface, border: `1px solid ${color}55`, borderRadius: 6, padding: "5px 13px", display: "flex", flexDirection: "column", alignItems: "center", cursor: "default" }}>
+        <span style={{ fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</span>
+        <span style={{ fontSize: small ? 12 : 14, fontWeight: 700, color, fontFamily: "'DM Mono', monospace" }}>{value}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Mean reference line (exact pixel position via band-scale interpolation) ───
+// Converts a data value to an x pixel on the histogram's category (band) axis.
+// Finds the bin by index, not by rebuilding its label (rounding can make labels differ).
+function valueToPixel(scale, value, binSize, dataMin) {
+  const start = Math.floor(dataMin / binSize) * binSize;
+  const binIdx = Math.floor((value - start) / binSize);
+  const domain = scale.domain();
+  if (binIdx < 0 || binIdx >= domain.length) return null;
+  const binX = scale(domain[binIdx]);
+  if (binX === undefined) return null;
+  return binX + ((value - (start + binIdx * binSize)) / binSize) * scale.bandwidth();
+}
+
+function MeanCustomLine({ xAxisMap, offset, mean, binSize, dataMin, stroke, label, pillBg }) {
+  if (!xAxisMap?.[0]?.scale?.bandwidth) return null;
+  const xPixel = valueToPixel(xAxisMap[0].scale, mean, binSize, dataMin);
+  if (xPixel === null) return null;
+  const y1 = offset.top;
+  const y2 = offset.top + offset.height;
+  const pw = 68, ph = 20, px = xPixel - pw / 2, py = y1 - ph - 6;
+  return (
+    <g>
+      <line x1={xPixel} y1={y1} x2={xPixel} y2={y2}
+        stroke={stroke} strokeDasharray="4 3" strokeWidth={1.5} />
+      {label && (
+        <g>
+          <rect x={px} y={py} width={pw} height={ph} rx={5} ry={5}
+            fill={pillBg} stroke={stroke} strokeWidth={1.2} />
+          <text x={xPixel} y={py + ph / 2 + 4.5} textAnchor="middle"
+            fill={stroke} fontSize={12} fontWeight={700} fontFamily="'DM Mono', monospace">
+            {label}
+          </text>
+        </g>
+      )}
+    </g>
+  );
+}
+
+// ── Grade cutoffs ─────────────────────────────────────────────────────────────
+// For each grade, look a little below the usual cutoff for the widest gap between
+// neighbouring scores, so the closest student who misses the grade is as far away
+// as possible. Cutoffs are only ever lowered from the usual value.
+
+const GRADE_SCALES = {
+  basic: { label: "A B C D F", grades: [["A", 90], ["B", 80], ["C", 70], ["D", 60]] },
+  plusminus: {
+    label: "With + / −",
+    grades: [["A", 93], ["A−", 90], ["B+", 87], ["B", 83], ["B−", 80], ["C+", 77], ["C", 73], ["C−", 70], ["D+", 67], ["D", 63], ["D−", 60]],
+  },
+};
+const GRADE_WINDOWS = [1, 1.5, 2, 2.5, 3, 4, 5];
+const SETTINGS_KEY = "distInspector";
+
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch (e) { return {}; }
+}
+function saveSettings(s) {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {}
+}
+
+const fmtNum = v => String(parseFloat(v.toFixed(2)));
+
+// Cutoff for a gap between `prev` (highest score below) and `top` (lowest score in the grade).
+// Any value in the gap gives the same grades, so pick the roundest one — but keep it in the
+// upper half of the gap, so the student just below doesn't look like they missed by 0.01.
+function niceCutoff(prev, top, floor = -Infinity) {
+  const min = Math.max(prev + (top - prev) / 2, floor);
+  for (const step of [1, 0.5, 0.1, 0.01]) {
+    const c = parseFloat((Math.floor(top / step + 1e-9) * step).toFixed(2));
+    if (c >= min - 1e-9) return c;
+  }
+  return top;
+}
+
+// Candidate cutoffs between `floor` and `nominal`, best first.
+// Ranking favours wide gaps close to the usual cutoff: a gap at the bottom of the
+// search window counts half as much as the same gap right at the usual cutoff.
+// That stops a slightly wider gap far down from handing the grade to many more students.
+// uniq: unique scores, ascending. span: search window size in score units.
+function cutoffOptions(uniq, nominal, floor, span) {
+  const options = [];
+  const padded = [...uniq, Infinity];
+  for (let i = 1; i < padded.length; i++) {
+    const prev = padded[i - 1];
+    if (prev >= nominal) break;
+    const top = Math.min(padded[i], nominal);
+    if (top <= floor) continue;
+    const cutoff = niceCutoff(prev, top, floor);
+    const gap = top - prev;
+    options.push({ cutoff, prev, gap, score: gap / (1 + (nominal - cutoff) / span) });
+  }
+  options.sort((a, b) => b.score - a.score || b.cutoff - a.cutoff);
+  return options;
+}
+
+function countBetween(sorted, lo, hi) {
+  return sorted.filter(v => v >= lo && v < hi).length;
+}
+
+function computeGradeRows(scores, grades, windowPct, outOf, overrides) {
+  const sorted = [...scores].sort((a, b) => a - b);
+  const uniq = [...new Set(sorted)];
+  const toPts = pct => parseFloat((pct * outOf / 100).toFixed(4));
+  const span = windowPct * outOf / 100;
+  return grades.map(([letter, pct], i) => {
+    const nominal = toPts(pct);
+    const nextNominal = i + 1 < grades.length ? toPts(grades[i + 1][1]) : -Infinity;
+    // Never search more than halfway to the next grade, so neighbouring grades can't collide
+    const floor = Math.max(nominal - span, (nominal + nextNominal) / 2);
+    const options = cutoffOptions(uniq, nominal, floor, span);
+    const suggested = options[0]?.cutoff ?? nominal;
+    const overridden = overrides[letter] != null;
+    const cutoff = overridden ? overrides[letter] : suggested;
+    const below = uniq.filter(v => v < cutoff);
+    const prev = below.length ? below[below.length - 1] : null;
+    const moved = cutoff <= nominal ? countBetween(sorted, cutoff, nominal) : -countBetween(sorted, nominal, cutoff);
+    return { letter, pct, nominal, floor, span, options, suggested, cutoff, overridden, prev, moved };
+  });
+}
+
+function gradeCounts(scores, rows) {
+  const counts = Object.fromEntries([...rows.map(r => [r.letter, 0]), ["F", 0]]);
+  for (const v of scores) {
+    const row = rows.find(r => v >= r.cutoff);
+    counts[row ? row.letter : "F"]++;
+  }
+  return counts;
+}
+
+// Cutoff lines drawn on the main histogram
+function CutoffLines({ xAxisMap, offset, cutoffs, binSize, dataMin, color }) {
+  const scale = xAxisMap?.[0]?.scale;
+  if (!scale?.bandwidth) return null;
+  return (
+    <g>
+      {cutoffs.map(c => {
+        const x = valueToPixel(scale, c.value, binSize, dataMin);
+        if (x === null) return null;
+        return (
+          <g key={c.letter}>
+            <line x1={x} x2={x} y1={offset.top} y2={offset.top + offset.height} stroke={color} strokeWidth={1.5} opacity={0.75} />
+            <text x={x + 4} y={offset.top + 12} fill={color} fontSize={11} fontWeight={700}>{c.letter}</text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+// Number line of the scores around one cutoff. Click a dot to make that student the lowest in the grade.
+function CutoffStrip({ scores, row, onPick, C }) {
+  const W = 380, H = 58, padX = 10, axisY = H - 16;
+  const pad = Math.max(row.span, 1) * 0.35;
+  const lo = Math.min(row.floor, row.nominal - row.span) - pad;
+  const hi = row.nominal + pad;
+  const x = v => padX + ((v - lo) / (hi - lo)) * (W - 2 * padX);
+
+  const inRange = scores.filter(v => v >= lo && v <= hi).sort((a, b) => a - b);
+  const stacks = new Map();
+  const dots = inRange.map(v => {
+    const key = v.toFixed(4);
+    const level = stacks.get(key) ?? 0;
+    stacks.set(key, level + 1);
+    return { v, level: Math.min(level, 3) };
+  });
+
+  const lowestIn = scores.reduce((m, v) => (v >= row.cutoff && v < m ? v : m), Infinity);
+  const range = hi - lo;
+  const step = range <= 8 ? 1 : range <= 20 ? 2 : 5;
+  const ticks = [];
+  for (let t = Math.ceil(lo / step) * step; t <= hi; t += step) ticks.push(t);
+  const clampX = v => x(Math.min(hi, Math.max(lo, v)));
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: W, height: "auto", display: "block" }} role="img"
+      aria-label={`Scores near the ${row.letter} cutoff`}>
+      {/* search window */}
+      <rect x={clampX(row.floor)} y={4} width={Math.max(0, clampX(row.nominal) - clampX(row.floor))} height={axisY - 4} fill={C.raised} />
+      {/* the gap below the cutoff */}
+      {row.prev !== null && lowestIn !== Infinity && (
+        <rect x={clampX(row.prev)} y={4} width={Math.max(0, clampX(lowestIn) - clampX(row.prev))} height={axisY - 4} fill={C.green + "2e"} />
+      )}
+      <line x1={padX} x2={W - padX} y1={axisY} y2={axisY} stroke={C.lineStrong} />
+      {ticks.map(t => (
+        <g key={t}>
+          <line x1={x(t)} x2={x(t)} y1={axisY} y2={axisY + 3} stroke={C.lineStrong} />
+          <text x={x(t)} y={axisY + 13} fontSize={10} fill={C.muted} textAnchor="middle" fontFamily="'DM Mono', monospace">{fmtNum(t)}</text>
+        </g>
+      ))}
+      <line x1={x(row.nominal)} x2={x(row.nominal)} y1={4} y2={axisY} stroke={C.muted} strokeDasharray="3 3" />
+      <line x1={x(row.cutoff)} x2={x(row.cutoff)} y1={2} y2={axisY} stroke={C.accent} strokeWidth={2} />
+      {dots.map(({ v, level }, i) => {
+        const inGrade = v >= row.cutoff;
+        return (
+          <circle key={i} cx={x(v)} cy={axisY - 7 - level * 8} r={4}
+            fill={inGrade ? C.accent : C.surface} stroke={inGrade ? C.accent : C.muted} strokeWidth={1.5}
+            style={{ cursor: "pointer" }} onClick={() => onPick(v)}>
+            <title>{`${fmtNum(v)} — click to make this the lowest ${row.letter}`}</title>
+          </circle>
+        );
+      })}
+    </svg>
+  );
+}
+
+// Text input that only commits on blur or Enter, so typing "88." isn't reformatted mid-edit
+function NumberField({ value, onCommit, C, label, width = 76, allowEmpty = false }) {
+  const [draft, setDraft] = useState(null);
+  const commit = () => {
+    if (draft === null) return;
+    const t = draft.trim();
+    if (t === "" && allowEmpty) onCommit(null);
+    else { const v = parseFloat(t); if (!isNaN(v)) onCommit(v); }
+    setDraft(null);
+  };
+  return (
+    <input type="text" inputMode="decimal" aria-label={label}
+      value={draft ?? fmtNum(value)}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setDraft(null); }}
+      style={{ width, background: C.surface, border: `1px solid ${C.lineStrong}`, borderRadius: 6, color: C.fg, fontFamily: "'DM Mono', monospace", fontSize: 13, padding: "6px 8px" }}
+    />
+  );
+}
+
+function GradeCutoffs({ scores, rows, scaleKey, onScale, windowPct, onWindow, outOf, onOutOf, onOverride, onReset, C }) {
+  const [copied, setCopied] = useState(false);
+  const counts = gradeCounts(scores, rows);
+  const total = scores.length;
+  const overlap = rows.some((r, i) => i + 1 < rows.length && r.cutoff <= rows[i + 1].cutoff);
+  const anyOverridden = rows.some(r => r.overridden);
+
+  const pickDot = (row, v) => {
+    const below = scores.filter(s => s < v);
+    const prev = below.length ? Math.max(...below) : v - 1;
+    onOverride(row.letter, niceCutoff(prev, v));
+  };
+  const copy = () => {
+    const last = rows[rows.length - 1];
+    const text = rows.map(r => `${r.letter} ≥ ${fmtNum(r.cutoff)}`).join(", ") + `, F < ${fmtNum(last.cutoff)}`;
+    navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => {});
+  };
+
+  const btn = { background: C.raised, border: `1px solid ${C.lineStrong}`, color: C.soft, fontFamily: "inherit", fontSize: 12, borderRadius: 6, padding: "6px 12px", cursor: "pointer" };
+  const label = { fontSize: 11, color: C.muted };
+  const selectStyle = { background: C.surface, border: `1px solid ${C.lineStrong}`, borderRadius: 6, color: C.fg, fontFamily: "inherit", fontSize: 12, padding: "6px 8px" };
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, marginTop: 16 }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", padding: "16px 18px 12px" }}>
+        <div style={{ maxWidth: 620 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.strong }}>Grade cutoffs</div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 3, lineHeight: 1.6 }}>
+            For each grade, this looks a little below the usual cutoff for a wide gap between students, so nobody
+            misses a grade by a hair. It favours gaps close to the usual cutoff, only ever lowers cutoffs, and never
+            goes more than halfway to the next grade.
+            Click a dot to make that student the lowest in the grade.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {anyOverridden && <button onClick={onReset} style={btn}>Reset to suggestions</button>}
+          <button onClick={copy} style={{ ...btn, color: C.fg }}>{copied ? "Copied" : "Copy cutoffs"}</button>
+        </div>
+      </div>
+
+      {/* Settings */}
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center", padding: "0 18px 14px" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={label}>Scale</span>
+          <select value={scaleKey} onChange={e => onScale(e.target.value)} style={selectStyle}>
+            {Object.entries(GRADE_SCALES).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
+          </select>
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={label}>Look up to</span>
+          <select value={windowPct} onChange={e => onWindow(parseFloat(e.target.value))} style={selectStyle}>
+            {GRADE_WINDOWS.map(w => <option key={w} value={w}>{w}%</option>)}
+          </select>
+          <span style={label}>below each cutoff</span>
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={label}>Scores out of</span>
+          <NumberField C={C} label="Scores out of" value={outOf} width={64} onCommit={v => { if (v > 0) onOutOf(v); }} />
+        </label>
+      </div>
+
+      {/* Grade counts */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "0 18px 14px" }}>
+        {Object.entries(counts).map(([letter, n]) => (
+          <div key={letter} style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 6, padding: "4px 10px", display: "flex", gap: 8, alignItems: "baseline" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.fg }}>{letter}</span>
+            <span style={{ fontSize: 12, fontFamily: "'DM Mono', monospace", color: C.accent }}>{n}</span>
+            <span style={{ fontSize: 10, color: C.muted }}>{total ? Math.round(n / total * 100) : 0}%</span>
+          </div>
+        ))}
+      </div>
+      {overlap && (
+        <div style={{ color: C.red, fontSize: 12, padding: "0 18px 12px" }}>
+          Some cutoffs overlap: each grade's cutoff should be higher than the one below it.
+        </div>
+      )}
+
+      {/* One row per grade */}
+      {rows.map(row => {
+        const nearest = row.prev === null ? null : row.cutoff - row.prev;
+        const others = row.options.filter(o => o.cutoff !== row.cutoff).slice(0, 2);
+        return (
+          <div key={row.letter} style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", padding: "12px 18px", borderTop: `1px solid ${C.line}` }}>
+            <div style={{ flex: "0 0 52px" }}>
+              <div style={{ fontFamily: "var(--display)", fontSize: 26, fontWeight: 600, lineHeight: 1, color: C.accent }}>{row.letter}</div>
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>usually {fmtNum(row.nominal)}</div>
+            </div>
+            <div style={{ flex: "1 1 280px", maxWidth: 380 }}>
+              <CutoffStrip scores={scores} row={row} onPick={v => pickDot(row, v)} C={C} />
+            </div>
+            <div style={{ flex: "1 1 260px", display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={label}>Cutoff</span>
+                <NumberField C={C} label={`${row.letter} cutoff`} value={row.cutoff} allowEmpty
+                  onCommit={v => onOverride(row.letter, v)} />
+                {row.overridden && row.cutoff !== row.suggested ? (
+                  <button onClick={() => onOverride(row.letter, null)} style={{ ...btn, padding: "3px 8px", fontSize: 11 }}>
+                    Use suggestion ({fmtNum(row.suggested)})
+                  </button>
+                ) : (
+                  <span style={{ fontSize: 10, fontWeight: 600, color: C.green, background: C.green + "1f", borderRadius: 10, padding: "2px 8px" }}>Suggested</span>
+                )}
+              </div>
+              <div style={{ fontSize: 11, color: C.soft, lineHeight: 1.5 }}>
+                {nearest === null
+                  ? "No scores below this cutoff."
+                  : <>Nearest score below: <b style={{ fontFamily: "'DM Mono', monospace" }}>{fmtNum(row.prev)}</b> ({fmtNum(nearest)} under)</>}
+                {" · "}
+                {row.moved > 0 ? `${row.moved} more student${row.moved === 1 ? "" : "s"} than the usual cutoff`
+                  : row.moved < 0 ? `${-row.moved} fewer student${row.moved === -1 ? "" : "s"} than the usual cutoff`
+                  : "same students as the usual cutoff"}
+              </div>
+              {others.length > 0 && (
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 10, color: C.muted }}>Other gaps:</span>
+                  {others.map(o => (
+                    <button key={o.cutoff} onClick={() => onOverride(row.letter, o.cutoff)} title={`Cutoff ${fmtNum(o.cutoff)}: ${fmtNum(o.gap)}-point gap below`}
+                      style={{ ...btn, padding: "2px 8px", fontSize: 11, fontFamily: "'DM Mono', monospace" }}>
+                      {fmtNum(o.cutoff)} <span style={{ color: C.muted }}>({fmtNum(o.gap)} gap)</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Custom tooltip ─────────────────────────────────────────────────────────────
+function ChartTooltip({ active, payload, n, C }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload;
+  return (
+    <div style={{ background: C.raised, border: `1px solid ${C.lineStrong}`, borderRadius: 6, padding: "8px 14px", fontSize: 12, color: C.fg, boxShadow: C.shadow }}>
+      <div style={{ fontWeight: 700, marginBottom: 2 }}>{d.range}</div>
+      <div style={{ color: C.violet }}>{d.count} values ({n ? (d.count / n * 100).toFixed(1) : 0}%)</div>
+    </div>
+  );
+}
+
+// ── Column picker (data preview; click a column to plot it) ───────────────────
+const PREVIEW_ROWS = 6;
+
+function Sparkline({ counts, color, width = 64, height = 18 }) {
+  const max = Math.max(...counts, 1);
+  const bw = width / counts.length;
+  return (
+    <svg width={width} height={height} aria-hidden="true" style={{ display: "block" }}>
+      {counts.map((c, i) => {
+        const h = c ? Math.max(1.5, (c / max) * height) : 0;
+        return <rect key={i} x={i * bw + 0.5} y={height - h} width={Math.max(1, bw - 1)} height={h} rx={1} fill={color} />;
+      })}
+    </svg>
+  );
+}
+
+function ColumnPicker({ csvData, selectedCol, onPick, onCancel, C }) {
+  const [hoverCol, setHoverCol] = useState(null);
+  const { columns, rows } = csvData;
+  const preview = rows.slice(0, PREVIEW_ROWS);
+  const sel = selectedCol === "" ? null : parseInt(selectedCol, 10);
+  const anyUsable = columns.some(c => c.usable);
+  const colBg = (i, base) => i === sel ? C.accent + "1a" : i === hoverCol ? C.raised : base;
+  const hover = i => () => setHoverCol(columns[i].usable ? i : null);
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, marginBottom: 16, overflow: "hidden" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "14px 18px 12px" }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.strong }}>Choose the column to plot</div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+            {anyUsable
+              ? `Click a column. Greyed-out columns have fewer than ${MIN_VALUES} numbers.`
+              : `No column has at least ${MIN_VALUES} numbers. Check that this is the right file.`}
+          </div>
+        </div>
+        {onCancel && (
+          <button onClick={onCancel} style={{ background: C.raised, border: `1px solid ${C.lineStrong}`, color: C.soft, fontFamily: "inherit", fontSize: 12, borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>
+            Cancel
+          </button>
+        )}
+      </div>
+      <div style={{ overflowX: "auto" }} onMouseLeave={() => setHoverCol(null)}>
+        <table style={{ borderCollapse: "collapse", minWidth: "100%", fontSize: 12 }}>
+          <thead>
+            <tr>
+              {columns.map((col, i) => (
+                <th key={i} style={{
+                  padding: 0, textAlign: "left", verticalAlign: "top",
+                  borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}`,
+                  background: colBg(i, C.bg),
+                  boxShadow: i === sel ? `inset 0 3px 0 ${C.accent}` : "none",
+                }}>
+                  <button
+                    className="colbtn"
+                    disabled={!col.usable}
+                    onClick={() => onPick(String(i))}
+                    onMouseEnter={hover(i)}
+                    aria-pressed={i === sel}
+                    title={col.usable ? `Plot “${col.name}”` : `Fewer than ${MIN_VALUES} numbers in this column`}
+                    style={{
+                      display: "flex", flexDirection: "column", gap: 5, width: "100%", minWidth: 96,
+                      padding: "10px 14px", background: "none", border: "none", textAlign: "left",
+                      fontFamily: "inherit", color: "inherit",
+                      cursor: col.usable ? "pointer" : "not-allowed", opacity: col.usable ? 1 : 0.45,
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: i === sel ? C.accent : C.fg }}>{col.name}</span>
+                    <span style={{ fontSize: 10, color: C.muted, whiteSpace: "nowrap" }}>
+                      {col.count === 0 ? "text" : `${col.count} number${col.count === 1 ? "" : "s"}`}
+                    </span>
+                    {col.spark
+                      ? <Sparkline counts={col.spark} color={i === sel || i === hoverCol ? C.accent : C.bar + "99"} />
+                      : <span style={{ height: 18 }} />}
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {preview.map((row, r) => (
+              <tr key={r}>
+                {columns.map((col, i) => {
+                  const raw = row[i] ?? "";
+                  const isNum = !isNaN(parseFloat(raw));
+                  return (
+                    <td key={i}
+                      onClick={col.usable ? () => onPick(String(i)) : undefined}
+                      onMouseEnter={hover(i)}
+                      style={{
+                        padding: "6px 14px", borderBottom: r < preview.length - 1 ? `1px solid ${C.line}` : "none",
+                        background: colBg(i, "transparent"),
+                        color: !col.usable ? C.muted : isNum ? C.fg : C.muted,
+                        opacity: col.usable ? 1 : 0.6,
+                        fontFamily: "'DM Mono', monospace", whiteSpace: "nowrap",
+                        maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis",
+                        cursor: col.usable ? "pointer" : "default",
+                      }}
+                    >
+                      {raw === "" ? "–" : raw}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > PREVIEW_ROWS && (
+        <div style={{ fontSize: 11, color: C.muted, padding: "8px 18px 12px", borderTop: `1px solid ${C.line}` }}>
+          Showing the first {PREVIEW_ROWS} of {rows.length} rows.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+function HistogramTool() {
+  const themeName = useThemeName();
+  const C = PALETTES[themeName];
+  const [csvData, setCsvData] = useState(null);      // { headers, rows, columns, fileName }
+  const [selectedCol, setSelectedCol] = useState(""); // column index as string
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [scores, setScores] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [binSize, setBinSize] = useState(8);
+  const [analysis, setAnalysis] = useState(null);
+  const [error, setError] = useState("");
+  const [title, setTitle] = useState("Distribution");
+  const [titleFocused, setTitleFocused] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [filterOutliers, setFilterOutliers] = useState(false);
+  const [filteredStats, setFilteredStats] = useState(null);
+  const [filteredAnalysis, setFilteredAnalysis] = useState(null);
+  const [gradeOpen, setGradeOpen] = useState(false);
+  const [gradeScale, setGradeScale] = useState(() => GRADE_SCALES[loadSettings().gradeScale] ? loadSettings().gradeScale : "basic");
+  const [gradeWindow, setGradeWindow] = useState(() => GRADE_WINDOWS.includes(loadSettings().gradeWindow) ? loadSettings().gradeWindow : 3);
+  const [outOf, setOutOf] = useState(100);
+  const [cutoffOverrides, setCutoffOverrides] = useState({}); // letter -> cutoff typed or picked by hand
+
+  useEffect(() => { saveSettings({ gradeScale, gradeWindow }); }, [gradeScale, gradeWindow]);
+  const chartRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!filterOutliers || !scores || !stats || stats.iqr === 0) {
+      setFilteredStats(null);
+      setFilteredAnalysis(null);
+      return;
+    }
+    const lo = stats.q1 - 1.5 * stats.iqr;
+    const hi = stats.q3 + 1.5 * stats.iqr;
+    const filtered = scores.filter(v => v >= lo && v <= hi);
+    if (filtered.length < 5) return;
+    const fs = computeStats(filtered);
+    setFilteredStats(fs);
+    setFilteredAnalysis(runLocalAnalysis(filtered, fs));
+  }, [filterOutliers, scores, stats]);
+
+  const handleFile = useCallback((file) => {
+    if (!file) return;
+    if (!file.name.endsWith(".csv")) { setError("Please upload a .csv file."); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const { headers, rows } = parseCSV(e.target.result);
+      if (headers.length === 0) { setError("Could not parse CSV — check the file format."); return; }
+      setCsvData({ headers, rows, columns: summarizeColumns(headers, rows), fileName: file.name });
+      setSelectedCol("");
+      setPickerOpen(true);
+      setScores(null);
+      setStats(null);
+      setAnalysis(null);
+      setError("");
+      setTitle(file.name.replace(/\.csv$/i, ""));
+    };
+    reader.readAsText(file);
+  }, []);
+
+  // A CSV can be dropped anywhere on the page
+  useEffect(() => {
+    const hasFiles = e => Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    const over = e => { if (hasFiles(e)) { e.preventDefault(); setDragging(true); } };
+    const leave = e => { if (!e.relatedTarget) setDragging(false); };
+    const drop = e => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      setDragging(false);
+      handleFile(e.dataTransfer.files[0]);
+    };
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    };
+  }, [handleFile]);
+
+  const handleColChange = useCallback((colIdx) => {
+    setSelectedCol(colIdx);
+    if (colIdx === "" || !csvData) return;
+    const parsed = extractColumn(csvData.rows, parseInt(colIdx, 10));
+    if (parsed.length < 5) { setError("This column has fewer than 5 numeric values."); return; }
+    setError("");
+    setPickerOpen(false);
+    const s = computeStats(parsed);
+    const result = runLocalAnalysis(parsed, s);
+    setScores(parsed);
+    setStats(s);
+    setBinSize(result.suggestedBinWidth);
+    setAnalysis(result);
+    setFilterOutliers(false);
+    setFilteredStats(null);
+    setFilteredAnalysis(null);
+    setCutoffOverrides({});
+    setOutOf(s.max <= 100 ? 100 : Math.ceil(s.max / 10) * 10);
+  }, [csvData]);
+
+  const lo = (stats && stats.iqr > 0) ? stats.q1 - 1.5 * stats.iqr : -Infinity;
+  const hi = (stats && stats.iqr > 0) ? stats.q3 + 1.5 * stats.iqr : Infinity;
+  const activeScores = (scores && filterOutliers) ? scores.filter(v => v >= lo && v <= hi) : scores;
+  const outlierCount = (scores && filterOutliers) ? scores.length - (activeScores?.length ?? 0) : 0;
+  const displayStats = (filterOutliers && filteredStats) ? filteredStats : stats;
+  const displayAnalysis = (filterOutliers && filteredAnalysis) ? filteredAnalysis : analysis;
+  const bins = activeScores && displayStats ? computeBins(activeScores, binSize, displayStats) : [];
+  const maxBin = displayStats ? Math.max(5, Math.round((displayStats.max - displayStats.min) / 3)) : 20;
+  // Grade cutoffs always use every score, even when outliers are hidden from the chart
+  const gradeRows = (gradeOpen && scores)
+    ? computeGradeRows(scores, GRADE_SCALES[gradeScale].grades, gradeWindow, outOf, cutoffOverrides)
+    : null;
+
+  const sectionLabel = { fontSize: 9, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 5 };
+  const card = { background: C.surface, border: `1px solid ${C.line}` };
+  const smallButton = { background: C.raised, border: `1px solid ${C.lineStrong}`, color: C.soft, fontFamily: "inherit", cursor: "pointer" };
+  const divider = <div style={{ width: 1, height: 20, background: C.line }} />;
+
+  return (
+    <div>
+      {/* Title */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 10, color: C.muted, textAlign: "right", marginBottom: 4 }}>Title included in PNG export</div>
+        <div style={{ borderBottom: `1px solid ${titleFocused ? C.bar : C.line}`, transition: "border-color 0.15s", paddingBottom: 4 }}>
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            onFocus={() => setTitleFocused(true)}
+            onBlur={() => setTitleFocused(false)}
+            placeholder="Dataset title…"
+            aria-label="Chart title"
+            style={{ fontSize: 22, fontWeight: 700, background: "transparent", border: "none", color: C.strong, outline: "none", width: "100%", fontFamily: "inherit", padding: 0 }}
+          />
+        </div>
+      </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        style={{ display: "none" }}
+        onChange={e => { handleFile(e.target.files[0]); e.target.value = ""; }}
+      />
+
+      {csvData ? (
+        /* Loaded file: one slim bar */
+        <div style={{
+          ...card, border: `1px ${dragging ? "dashed" : "solid"} ${dragging ? C.bar : C.line}`,
+          borderRadius: 8, padding: "10px 14px", marginBottom: 12,
+          display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+        }}>
+          <span style={{ fontSize: 16 }} aria-hidden="true">📄</span>
+          <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.fg, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {dragging ? "Drop to replace this file" : csvData.fileName}
+            </div>
+            <div style={{ fontSize: 11, color: C.muted }}>
+              {csvData.rows.length} rows · {csvData.headers.length} columns
+              {selectedCol !== "" && <> · plotting <span style={{ color: C.accent, fontWeight: 600 }}>{csvData.columns[selectedCol]?.name}</span></>}
+            </div>
+          </div>
+          {selectedCol !== "" && !pickerOpen && (
+            <button onClick={() => setPickerOpen(true)} style={{ ...smallButton, color: C.fg, borderRadius: 6, fontSize: 12, padding: "7px 14px" }}>
+              Change column
+            </button>
+          )}
+          <button onClick={() => fileInputRef.current?.click()} style={{ ...smallButton, borderRadius: 6, fontSize: 12, padding: "7px 14px" }}>
+            Replace file
+          </button>
+        </div>
+      ) : (
+        /* No file yet: drop zone */
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => fileInputRef.current?.click()}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInputRef.current?.click(); } }}
+          style={{
+            background: dragging ? C.accent + "12" : C.surface,
+            border: `2px dashed ${dragging ? C.bar : C.lineStrong}`,
+            borderRadius: 10, padding: "36px 20px", marginBottom: 12,
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+            cursor: "pointer", transition: "border-color 0.15s, background 0.15s", textAlign: "center",
+          }}
+        >
+          <span style={{ fontSize: 22, color: C.accent }} aria-hidden="true">⬆</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: C.fg }}>{dragging ? "Drop to open" : "Drop a CSV here or click to browse"}</span>
+          <span style={{ fontSize: 11, color: C.muted }}>One row per student, one column per score. The file stays on this computer.</span>
+        </div>
+      )}
+      {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 10 }}>{error}</div>}
+
+      {csvData && pickerOpen && (
+        <ColumnPicker
+          csvData={csvData}
+          selectedCol={selectedCol}
+          onPick={handleColChange}
+          onCancel={selectedCol !== "" ? () => setPickerOpen(false) : null}
+          C={C}
+        />
+      )}
+
+      {/* Stat pills */}
+      {displayStats && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+          <StatPill C={C} label="n" value={displayStats.n} color={statColor(C, "n")} tip="Sample size — the total number of numeric values in the selected column." />
+          <StatPill C={C} label="mean" value={displayStats.mean.toFixed(1)} color={statColor(C, "mean")} tip="Arithmetic average. Sum of all values divided by n. Sensitive to outliers." />
+          <StatPill C={C} label="median" value={displayStats.median.toFixed(1)} color={statColor(C, "median")} tip="Middle value when data is sorted. More robust than the mean when outliers are present." />
+          <StatPill C={C} label="SD" value={displayStats.std.toFixed(1)} color={statColor(C, "sd")} tip="Standard deviation — the typical distance of values from the mean. Larger = more spread out." />
+          <StatPill C={C} label="skew" value={displayStats.skew.toFixed(2)} color={statColor(C, "skew")} tip="Skewness measures asymmetry. 0 = symmetric. Positive = long right tail (a few very high values). Negative = long left tail (a few very low values)." />
+          <StatPill C={C} label="min" value={displayStats.min} color={statColor(C, "min")} tip="Smallest value in the dataset." />
+          <StatPill C={C} label="max" value={displayStats.max} color={statColor(C, "max")} tip="Largest value in the dataset." />
+          {displayAnalysis && (
+            <StatPill
+              C={C}
+              label="modality"
+              value={displayAnalysis.modality}
+              color={modalityColor(C, displayAnalysis.modality)}
+              tip="Number of peaks detected via kernel density estimation. Bimodal or multimodal distributions often indicate distinct subgroups in the data."
+              small
+            />
+          )}
+        </div>
+      )}
+
+      {/* Chart + Analysis */}
+      {scores && displayStats && (
+        <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+          {/* Chart */}
+          <div ref={chartRef} style={{ ...card, flex: "1 1 400px", borderRadius: 10, padding: "16px 8px 8px", minWidth: 0 }}>
+            <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={bins} margin={{ top: 28, right: 16, left: 0, bottom: 22 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.line} />
+                <XAxis dataKey="label" tick={{ fontSize: 12, fill: C.muted }} stroke={C.lineStrong} interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 12, fill: C.muted }} stroke={C.lineStrong} label={{ value: "Count", angle: -90, position: "insideLeft", offset: 10, fontSize: 13, fill: C.muted }} allowDecimals={false} />
+                <Tooltip content={<ChartTooltip n={displayStats.n} C={C} />} cursor={{ fill: C.raised }} />
+                <Customized component={MeanCustomLine} mean={displayStats.mean} binSize={binSize}
+                  dataMin={displayStats.min} stroke={C.mean} label={`μ=${displayStats.mean.toFixed(1)}`} pillBg={C.surface} />
+                <Bar dataKey="count" fill={C.bar} fillOpacity={0.8} radius={[3, 3, 0, 0]} />
+                <Line dataKey="curve" type="monotone" stroke={C.curve} strokeWidth={2} dot={false} />
+                {gradeRows && (
+                  <Customized component={CutoffLines} cutoffs={gradeRows.map(r => ({ letter: r.letter, value: r.cutoff }))}
+                    binSize={binSize} dataMin={displayStats.min} color={C.fg} />
+                )}
+              </ComposedChart>
+            </ResponsiveContainer>
+            <div style={{ display: "flex", gap: 16, justifyContent: "center", fontSize: 10, color: C.muted, marginTop: 4 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ display: "inline-block", width: 10, height: 10, background: C.bar, borderRadius: 2 }} /> Counts</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ display: "inline-block", width: 16, height: 2, background: C.curve }} /> Normal fit</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ display: "inline-block", width: 16, height: 0, borderTop: `2px dashed ${C.mean}` }} /> Mean</span>
+              {gradeRows && <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ display: "inline-block", width: 16, height: 0, borderTop: `2px solid ${C.fg}`, opacity: 0.75 }} /> Grade cutoffs</span>}
+            </div>
+          </div>
+
+          {/* Analysis panel */}
+          {displayAnalysis && (
+            <div style={{ ...card, flex: "0 0 220px", borderRadius: 10, padding: "18px", display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <div style={sectionLabel}>Modality</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: modalityColor(C, displayAnalysis.modality), marginBottom: 5 }}>{displayAnalysis.modality}</div>
+                <p style={{ fontSize: 11, color: C.muted, margin: 0, lineHeight: 1.6 }}>{displayAnalysis.modalityNote}</p>
+              </div>
+              <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 14 }}>
+                <div style={sectionLabel}>Shape</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: C.fg }}>{displayAnalysis.normalityAssessment}</div>
+              </div>
+              <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 14, flex: 1 }}>
+                <div style={sectionLabel}>Interpretation</div>
+                <p style={{ fontSize: 11, color: C.soft, margin: 0, lineHeight: 1.7 }}>{displayAnalysis.interpretation}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Controls bar */}
+      {scores && displayStats && (
+        <div style={{ ...card, display: "flex", alignItems: "center", gap: 16, borderRadius: 8, padding: "12px 18px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>Bin width</span>
+          <input type="range" min={0.5} max={maxBin} step={0.5} value={binSize} onChange={e => setBinSize(parseFloat(e.target.value))} aria-label="Bin width" style={{ flex: 1, minWidth: 80, accentColor: C.bar }} />
+          <span style={{ fontSize: 13, fontFamily: "'DM Mono', monospace", color: C.accent, minWidth: 28 }}>{binSize}</span>
+          <button
+            onClick={() => setBinSize(displayStats.fdBin)}
+            style={{ ...smallButton, fontSize: 11, borderRadius: 4, padding: "4px 10px" }}
+          >
+            Auto
+          </button>
+          {divider}
+          <button
+            onClick={() => setFilterOutliers(f => !f)}
+            aria-pressed={filterOutliers}
+            style={{
+              ...smallButton,
+              background: filterOutliers ? C.violet + "1f" : C.raised,
+              border: `1px solid ${filterOutliers ? C.violet + "66" : C.lineStrong}`,
+              color: filterOutliers ? C.violet : C.soft,
+              borderRadius: 6, fontWeight: 500, fontSize: 12,
+              padding: "7px 14px", display: "flex", alignItems: "center", gap: 6,
+              whiteSpace: "nowrap", transition: "all 0.15s",
+            }}
+          >
+            Filter outliers
+            {filterOutliers && outlierCount > 0 && (
+              <span style={{ fontSize: 10, background: C.violet + "22", borderRadius: 10, padding: "1px 6px", color: C.violet, fontFamily: "'DM Mono', monospace" }}>
+                -{outlierCount}
+              </span>
+            )}
+          </button>
+          {divider}
+          <button
+            onClick={() => setGradeOpen(o => !o)}
+            aria-pressed={gradeOpen}
+            style={{
+              ...smallButton,
+              background: gradeOpen ? C.accent + "1f" : C.raised,
+              border: `1px solid ${gradeOpen ? C.accent + "66" : C.lineStrong}`,
+              color: gradeOpen ? C.accent : C.soft,
+              borderRadius: 6, fontWeight: 500, fontSize: 12, padding: "7px 14px", whiteSpace: "nowrap", transition: "all 0.15s",
+            }}
+          >
+            Grade cutoffs
+          </button>
+          {divider}
+          <button
+            onClick={() => setExportModalOpen(true)}
+            style={{ ...smallButton, color: C.fg, borderRadius: 6, fontWeight: 500, fontSize: 12, padding: "7px 14px", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
+          >
+            ↓ Export PNG
+          </button>
+        </div>
+      )}
+
+      {gradeRows && (
+        <GradeCutoffs
+          scores={scores}
+          rows={gradeRows}
+          scaleKey={gradeScale}
+          onScale={k => { setGradeScale(k); setCutoffOverrides({}); }}
+          windowPct={gradeWindow}
+          onWindow={setGradeWindow}
+          outOf={outOf}
+          onOutOf={v => { setOutOf(v); setCutoffOverrides({}); }}
+          onOverride={(letter, v) => setCutoffOverrides(o => ({ ...o, [letter]: v }))}
+          onReset={() => setCutoffOverrides({})}
+          C={C}
+        />
+      )}
+
+      <ExportModal
+        open={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        bins={bins}
+        stats={displayStats}
+        analysis={displayAnalysis}
+        binSize={binSize}
+        C={C}
+        pageTheme={themeName}
+        onExport={({ sizeId, statKeys, themeName: exportTheme }) => {
+          setExportModalOpen(false);
+          setTimeout(() => exportPNG({ titleText: title, sizeId, statKeys, stats: displayStats, analysis: displayAnalysis, bins, binSize, themeName: exportTheme }), 0);
+        }}
+      />
+
+    </div>
+  );
+}
+
+createRoot(document.getElementById("root")).render(
+  <StrictMode>
+    <HistogramTool />
+  </StrictMode>
+);
+</script>
+</body>
+</html>
