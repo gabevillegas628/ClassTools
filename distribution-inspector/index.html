@@ -730,13 +730,43 @@ function MeanCustomLine({ xAxisMap, offset, mean, binSize, dataMin, stroke, labe
 // neighbouring scores, so the closest student who misses the grade is as far away
 // as possible. Cutoffs are only ever lowered from the usual value.
 
+// Each grade is [name, usual cutoff as a % of "Scores out of"]; `bottom` is the grade below the lowest cutoff.
 const GRADE_SCALES = {
-  basic: { label: "A B C D F", grades: [["A", 90], ["B", 80], ["C", 70], ["D", 60]] },
+  basic: { label: "A B C D F", grades: [["A", 90], ["B", 80], ["C", 70], ["D", 60]], bottom: "F" },
   plusminus: {
     label: "With + / −",
     grades: [["A", 93], ["A−", 90], ["B+", 87], ["B", 83], ["B−", 80], ["C+", 77], ["C", 73], ["C−", 70], ["D+", 67], ["D", 63], ["D−", 60]],
+    bottom: "F",
   },
+  // Rutgers has no minus grades or A+. It doesn't set cutoffs; these are the ones commonly used.
+  rutgers: { label: "Rutgers (A B+ B C+ C D F)", grades: [["A", 90], ["B+", 87], ["B", 80], ["C+", 77], ["C", 70], ["D", 60]], bottom: "F" },
+  custom: { label: "Custom…" },
 };
+const DEFAULT_CUSTOM_SCALE = { grades: GRADE_SCALES.rutgers.grades, bottom: "F" };
+
+// Turns a hand-edited scale into a usable one: sorted highest first, with blank names,
+// repeated names and repeated cutoffs dropped. Returns what was dropped as `problems`.
+function cleanScale(scale) {
+  const problems = new Set();
+  const names = new Set();
+  const cutoffs = new Set();
+  const bottom = (scale?.bottom ?? "").trim() || "F";
+  const grades = [];
+  for (const [rawName, pct] of [...(scale?.grades ?? [])].sort((a, b) => b[1] - a[1])) {
+    const name = String(rawName ?? "").trim();
+    if (!name) { problems.add("Every grade needs a name."); continue; }
+    if (names.has(name) || name === bottom) { problems.add(`“${name}” is used more than once.`); continue; }
+    if (!(pct > 0 && pct <= 100)) { problems.add("Cutoffs must be between 0 and 100%."); continue; }
+    if (cutoffs.has(pct)) { problems.add(`Two grades share the ${fmtNum(pct)}% cutoff.`); continue; }
+    names.add(name); cutoffs.add(pct);
+    grades.push([name, pct]);
+  }
+  return { grades, bottom, problems: [...problems] };
+}
+
+function activeScale(key, custom) {
+  return key === "custom" ? cleanScale(custom) : { ...GRADE_SCALES[key], problems: [] };
+}
 const GRADE_WINDOWS = [1, 1.5, 2, 2.5, 3, 4, 5];
 const SETTINGS_KEY = "distInspector";
 
@@ -807,11 +837,11 @@ function computeGradeRows(scores, grades, windowPct, outOf, overrides) {
   });
 }
 
-function gradeCounts(scores, rows) {
-  const counts = Object.fromEntries([...rows.map(r => [r.letter, 0]), ["F", 0]]);
+function gradeCounts(scores, rows, bottom) {
+  const counts = Object.fromEntries([...rows.map(r => [r.letter, 0]), [bottom, 0]]);
   for (const v of scores) {
     const row = rows.find(r => v >= r.cutoff);
-    counts[row ? row.letter : "F"]++;
+    counts[row ? row.letter : bottom]++;
   }
   return counts;
 }
@@ -913,9 +943,72 @@ function NumberField({ value, onCommit, C, label, width = 76, allowEmpty = false
   );
 }
 
-function GradeCutoffs({ scores, rows, scaleKey, onScale, windowPct, onWindow, outOf, onOutOf, onOverride, onReset, C }) {
+// Grade-name input; commits on blur or Enter like NumberField
+function TextField({ value, onCommit, C, label, width = 52 }) {
+  const [draft, setDraft] = useState(null);
+  const commit = () => { if (draft !== null) onCommit(draft.trim()); setDraft(null); };
+  return (
+    <input type="text" aria-label={label} maxLength={6}
+      value={draft ?? value}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setDraft(null); }}
+      style={{ width, background: C.surface, border: `1px solid ${C.lineStrong}`, borderRadius: 9, color: C.fg, fontFamily: "inherit", fontWeight: 700, fontSize: 13, padding: "6px 8px" }}
+    />
+  );
+}
+
+// Editor for a custom scale: each grade's name and usual cutoff, plus the name of the bottom grade
+function ScaleEditor({ scale, onChange, problems, C }) {
+  const grades = scale.grades;
+  const sortDesc = g => [...g].sort((a, b) => b[1] - a[1]);
+  const setGrade = (i, name, pct) => onChange({ ...scale, grades: sortDesc(grades.map((g, j) => j === i ? [name, pct] : g)) });
+  const remove = i => onChange({ ...scale, grades: grades.filter((_, j) => j !== i) });
+  const add = () => {
+    const lowest = grades.length ? Math.min(...grades.map(g => g[1])) : 100;
+    onChange({ ...scale, grades: sortDesc([...grades, ["New", Math.max(1, lowest - 5)]]) });
+  };
+  const chip = { display: "flex", alignItems: "center", gap: 6, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 9, padding: "4px 6px 4px 4px" };
+  const small = { fontSize: 11, color: C.muted };
+  const iconBtn = { background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 4px", fontFamily: "inherit" };
+
+  return (
+    <div style={{ padding: "0 18px 14px" }}>
+      <div style={{ background: C.raised, border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 14px" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.fg, marginBottom: 2 }}>Your grades</div>
+        <div style={{ ...small, marginBottom: 10 }}>Name each grade and its usual cutoff. The tool then looks for gaps just below each one.</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {grades.map(([name, pct], i) => (
+            <div key={`${i}-${name}-${pct}`} style={chip}>
+              <TextField C={C} label={`Grade ${i + 1} name`} value={name} onCommit={v => setGrade(i, v, pct)} />
+              <span style={small}>≥</span>
+              <NumberField C={C} label={`${name || `Grade ${i + 1}`} usual cutoff`} value={pct} width={54}
+                onCommit={v => setGrade(i, name, v)} />
+              <span style={small}>%</span>
+              <button onClick={() => remove(i)} aria-label={`Remove ${name || `grade ${i + 1}`}`} title="Remove" style={iconBtn}>×</button>
+            </div>
+          ))}
+          <button onClick={add} style={{ background: "none", border: `1px dashed ${C.lineStrong}`, borderRadius: 9, color: C.soft, fontFamily: "inherit", fontSize: 12, padding: "8px 12px", cursor: "pointer" }}>
+            + Add grade
+          </button>
+          <div style={{ ...chip, paddingLeft: 10 }}>
+            <span style={small}>Below the lowest</span>
+            <TextField C={C} label="Bottom grade name" value={scale.bottom} onCommit={v => onChange({ ...scale, bottom: v || "F" })} />
+          </div>
+        </div>
+        {problems.length > 0 && (
+          <div style={{ color: C.red, fontSize: 11, marginTop: 10 }}>
+            {problems.join(" ")} Those grades are left out until fixed.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GradeCutoffs({ scores, rows, bottom, scaleKey, onScale, customScale, onCustomScale, problems, windowPct, onWindow, outOf, onOutOf, onOverride, onReset, C }) {
   const [copied, setCopied] = useState(false);
-  const counts = gradeCounts(scores, rows);
+  const counts = gradeCounts(scores, rows, bottom);
   const total = scores.length;
   const overlap = rows.some((r, i) => i + 1 < rows.length && r.cutoff <= rows[i + 1].cutoff);
   const anyOverridden = rows.some(r => r.overridden);
@@ -927,7 +1020,8 @@ function GradeCutoffs({ scores, rows, scaleKey, onScale, windowPct, onWindow, ou
   };
   const copy = () => {
     const last = rows[rows.length - 1];
-    const text = rows.map(r => `${r.letter} ≥ ${fmtNum(r.cutoff)}`).join(", ") + `, F < ${fmtNum(last.cutoff)}`;
+    if (!last) return;
+    const text = rows.map(r => `${r.letter} ≥ ${fmtNum(r.cutoff)}`).join(", ") + `, ${bottom} < ${fmtNum(last.cutoff)}`;
     navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => {});
   };
 
@@ -974,6 +1068,11 @@ function GradeCutoffs({ scores, rows, scaleKey, onScale, windowPct, onWindow, ou
           <NumberField C={C} label="Scores out of" value={outOf} width={64} onCommit={v => { if (v > 0) onOutOf(v); }} />
         </label>
       </div>
+
+      {scaleKey === "custom" && <ScaleEditor scale={customScale} onChange={onCustomScale} problems={problems} C={C} />}
+      {rows.length === 0 && (
+        <div style={{ fontSize: 12, color: C.muted, padding: "0 18px 16px" }}>Add at least one grade to see suggested cutoffs.</div>
+      )}
 
       {/* Grade counts */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "0 18px 14px" }}>
@@ -1196,10 +1295,14 @@ function HistogramTool() {
   const [gradeOpen, setGradeOpen] = useState(false);
   const [gradeScale, setGradeScale] = useState(() => GRADE_SCALES[loadSettings().gradeScale] ? loadSettings().gradeScale : "basic");
   const [gradeWindow, setGradeWindow] = useState(() => GRADE_WINDOWS.includes(loadSettings().gradeWindow) ? loadSettings().gradeWindow : 3);
+  const [customScale, setCustomScale] = useState(() => {
+    const s = loadSettings().customScale;
+    return Array.isArray(s?.grades) ? s : DEFAULT_CUSTOM_SCALE;
+  });
   const [outOf, setOutOf] = useState(100);
   const [cutoffOverrides, setCutoffOverrides] = useState({}); // letter -> cutoff typed or picked by hand
 
-  useEffect(() => { saveSettings({ gradeScale, gradeWindow }); }, [gradeScale, gradeWindow]);
+  useEffect(() => { saveSettings({ gradeScale, gradeWindow, customScale }); }, [gradeScale, gradeWindow, customScale]);
   const chartRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -1287,8 +1390,9 @@ function HistogramTool() {
   const bins = activeScores && displayStats ? computeBins(activeScores, binSize, displayStats) : [];
   const maxBin = displayStats ? Math.max(5, Math.round((displayStats.max - displayStats.min) / 3)) : 20;
   // Grade cutoffs always use every score, even when outliers are hidden from the chart
+  const scale = activeScale(gradeScale, customScale);
   const gradeRows = (gradeOpen && scores)
-    ? computeGradeRows(scores, GRADE_SCALES[gradeScale].grades, gradeWindow, outOf, cutoffOverrides)
+    ? computeGradeRows(scores, scale.grades, gradeWindow, outOf, cutoffOverrides)
     : null;
 
   const sectionLabel = { fontSize: 9, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 5 };
@@ -1514,8 +1618,12 @@ function HistogramTool() {
         <GradeCutoffs
           scores={scores}
           rows={gradeRows}
+          bottom={scale.bottom}
           scaleKey={gradeScale}
           onScale={k => { setGradeScale(k); setCutoffOverrides({}); }}
+          customScale={customScale}
+          onCustomScale={s => { setCustomScale(s); setCutoffOverrides({}); }}
+          problems={scale.problems}
           windowPct={gradeWindow}
           onWindow={setGradeWindow}
           outOf={outOf}
