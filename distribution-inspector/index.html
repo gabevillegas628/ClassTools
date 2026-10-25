@@ -816,7 +816,60 @@ function countBetween(sorted, lo, hi) {
   return sorted.filter(v => v >= lo && v < hi).length;
 }
 
-function computeGradeRows(scores, grades, windowPct, outOf, overrides) {
+// Rounds to the nearest whole number, with .5 going up (89.5 → 90, 89.49 → 89)
+const roundScore = v => Math.floor(v + 0.5 + 1e-9);
+
+// Whole-number version. Students only ever see their rounded grade, so what matters is
+// nobody sitting one point under a cutoff. For a cutoff c, `empty` counts the whole numbers
+// just below c that nobody rounds to (0 means someone is at c − 1: one point short).
+function computeGradeRowsRounded(scores, grades, windowPct, outOf, overrides) {
+  const sorted = scores.map(roundScore).sort((a, b) => a - b);
+  const count = new Map();
+  for (const v of sorted) count.set(v, (count.get(v) ?? 0) + 1);
+  const uniq = [...count.keys()].sort((a, b) => a - b);
+  const toPts = pct => Math.ceil(pct * outOf / 100 - 1e-9);
+  const span = Math.max(1, windowPct * outOf / 100);
+  const highestBelow = c => { let h = null; for (const u of uniq) { if (u < c) h = u; else break; } return h; };
+  const describe = c => {
+    const prev = highestBelow(c);
+    return { cutoff: c, prev, empty: prev === null ? Infinity : c - 1 - prev, oneShort: count.get(c - 1) ?? 0 };
+  };
+
+  return grades.map(([letter, pct], i) => {
+    const nominal = toPts(pct);
+    const nextNominal = i + 1 < grades.length ? toPts(grades[i + 1][1]) : -Infinity;
+    // Same limits as before: at most `span` below, and never more than halfway to the next grade
+    const floor = Math.min(nominal, Math.ceil(Math.max(nominal - span, (nominal + nextNominal) / 2) - 1e-9));
+
+    // Most empty points wins, discounted the further the cutoff drops. Options without an empty
+    // point are ranked by students one point short (with the same discount) for the "Also try" list.
+    const options = [];
+    for (let c = nominal; c >= floor; c--) {
+      const o = describe(c);
+      const drop = 1 + (nominal - c) / span;
+      o.score = Math.min(o.empty, 10) / drop;
+      o.cost = o.oneShort * drop;
+      o.moved = countBetween(sorted, c, nominal);
+      options.push(o);
+    }
+    options.sort((a, b) => b.score - a.score || a.cost - b.cost || b.cutoff - a.cutoff);
+
+    // Only move a cutoff by itself when there's a real lull (an empty whole number). Otherwise
+    // every option leaves someone one point short, and trading fewer gripes for handing the
+    // grade to more students is the instructor's call, so keep the usual cutoff.
+    const noEmptyNearby = options.every(o => o.empty === 0);
+    const suggested = noEmptyNearby ? nominal : (options[0]?.cutoff ?? nominal);
+    const overridden = overrides[letter] != null;
+    const cutoff = overridden ? overrides[letter] : suggested;
+    const now = describe(cutoff);
+    const moved = cutoff <= nominal ? countBetween(sorted, cutoff, nominal) : -countBetween(sorted, nominal, cutoff);
+    return { letter, pct, nominal, floor, span, options, suggested, cutoff, overridden, moved, rounded: true,
+      prev: now.prev, empty: now.empty, oneShort: now.oneShort, noEmptyNearby };
+  });
+}
+
+function computeGradeRows(scores, grades, windowPct, outOf, overrides, rounded = false) {
+  if (rounded) return computeGradeRowsRounded(scores, grades, windowPct, outOf, overrides);
   const sorted = [...scores].sort((a, b) => a - b);
   const uniq = [...new Set(sorted)];
   const toPts = pct => parseFloat((pct * outOf / 100).toFixed(4));
@@ -869,7 +922,9 @@ function CutoffLines({ xAxisMap, offset, cutoffs, binSize, dataMin, color }) {
 // Number line of the scores around one cutoff. Click a dot to make that student the lowest in the grade.
 function CutoffStrip({ scores, row, onPick, C }) {
   const W = 380, H = 58, padX = 10, axisY = H - 16;
-  const pad = Math.max(row.span, 1) * 0.35;
+  // With whole-number scores a cutoff of 90 sits between the 89 and 90 columns
+  const off = row.rounded ? 0.5 : 0;
+  const pad = row.rounded ? 1.5 : Math.max(row.span, 1) * 0.35;
   const lo = Math.min(row.floor, row.nominal - row.span) - pad;
   const hi = row.nominal + pad;
   const x = v => padX + ((v - lo) / (hi - lo)) * (W - 2 * padX);
@@ -894,10 +949,10 @@ function CutoffStrip({ scores, row, onPick, C }) {
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: W, height: "auto", display: "block" }} role="img"
       aria-label={`Scores near the ${row.letter} cutoff`}>
       {/* search window */}
-      <rect x={clampX(row.floor)} y={4} width={Math.max(0, clampX(row.nominal) - clampX(row.floor))} height={axisY - 4} fill={C.raised} />
+      <rect x={clampX(row.floor - off)} y={4} width={Math.max(0, clampX(row.nominal - off) - clampX(row.floor - off))} height={axisY - 4} fill={C.raised} />
       {/* the gap below the cutoff */}
       {row.prev !== null && lowestIn !== Infinity && (
-        <rect x={clampX(row.prev)} y={4} width={Math.max(0, clampX(lowestIn) - clampX(row.prev))} height={axisY - 4} fill={C.green + "2e"} />
+        <rect x={clampX(row.prev + off)} y={4} width={Math.max(0, clampX(lowestIn - off) - clampX(row.prev + off))} height={axisY - 4} fill={C.green + "2e"} />
       )}
       <line x1={padX} x2={W - padX} y1={axisY} y2={axisY} stroke={C.lineStrong} />
       {ticks.map(t => (
@@ -906,19 +961,124 @@ function CutoffStrip({ scores, row, onPick, C }) {
           <text x={x(t)} y={axisY + 13} fontSize={10} fill={C.muted} textAnchor="middle" fontFamily="'JetBrains Mono', monospace">{fmtNum(t)}</text>
         </g>
       ))}
-      <line x1={x(row.nominal)} x2={x(row.nominal)} y1={4} y2={axisY} stroke={C.muted} strokeDasharray="3 3" />
-      <line x1={x(row.cutoff)} x2={x(row.cutoff)} y1={2} y2={axisY} stroke={C.accent} strokeWidth={2} />
+      <line x1={x(row.nominal - off)} x2={x(row.nominal - off)} y1={4} y2={axisY} stroke={C.muted} strokeDasharray="3 3" />
+      <line x1={x(row.cutoff - off)} x2={x(row.cutoff - off)} y1={2} y2={axisY} stroke={C.accent} strokeWidth={2} />
       {dots.map(({ v, level }, i) => {
         const inGrade = v >= row.cutoff;
+        const oneShort = row.rounded && v === row.cutoff - 1;
         return (
           <circle key={i} cx={x(v)} cy={axisY - 7 - level * 8} r={4}
-            fill={inGrade ? C.accent : C.surface} stroke={inGrade ? C.accent : C.muted} strokeWidth={1.5}
+            fill={inGrade ? C.accent : C.surface} stroke={inGrade ? C.accent : oneShort ? C.amber : C.muted} strokeWidth={oneShort ? 2.5 : 1.5}
             style={{ cursor: "pointer" }} onClick={() => onPick(v)}>
-            <title>{`${fmtNum(v)} — click to make this the lowest ${row.letter}`}</title>
+            <title>{`${fmtNum(v)}${oneShort ? " — one point short" : ""} — click to make this the lowest ${row.letter}`}</title>
           </circle>
         );
       })}
     </svg>
+  );
+}
+
+// Bar chart of how many students get each grade with the current cutoffs. A dashed outline
+// shows what the usual cutoffs would give, so it's easy to see how much the suggestions shift.
+function GradeHistogram({ counts, usualCounts, total, C }) {
+  const entries = Object.entries(counts);
+  const max = Math.max(1, ...entries.map(([, n]) => n), ...Object.values(usualCounts));
+  const BAR_H = 110;
+  const pct = n => (total ? Math.round(n / total * 100) : 0);
+  const anyDiff = entries.some(([letter, n]) => n !== (usualCounts[letter] ?? 0));
+  // Grades the cutoffs have emptied out (they'd have students with the usual cutoffs)
+  const emptied = entries.filter(([letter, n]) => n === 0 && (usualCounts[letter] ?? 0) > 0);
+
+  return (
+    <div style={{ padding: "0 18px 16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.fg }}>Grade distribution</div>
+        <div style={{ display: "flex", gap: 14, fontSize: 10, color: C.muted }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: C.bar, opacity: 0.85 }} /> These cutoffs
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, border: `1.5px dashed ${C.muted}` }} /> Usual cutoffs
+          </span>
+        </div>
+      </div>
+      <div role="img" aria-label={entries.map(([letter, n]) => `${letter}: ${n}`).join(", ")}
+        style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+        {entries.map(([letter, n]) => {
+          const usual = usualCounts[letter] ?? 0;
+          const diff = n - usual;
+          return (
+            <div key={letter} style={{ flex: "1 1 0", maxWidth: 96, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}
+              title={`${letter}: ${n} student${n === 1 ? "" : "s"} (${pct(n)}%)${diff ? `, ${usual} with the usual cutoffs` : ""}`}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 700, color: n === 0 && usual > 0 ? C.amber : C.fg, whiteSpace: "nowrap" }}>
+                {n}
+                {diff !== 0 && <span style={{ fontSize: 10, fontWeight: 500, color: C.muted, marginLeft: 3 }}>{diff > 0 ? `+${diff}` : `−${-diff}`}</span>}
+              </div>
+              <div style={{ position: "relative", width: "100%", height: BAR_H }}>
+                <div style={{ position: "absolute", bottom: 0, left: "12%", right: "12%", height: (n / max) * BAR_H,
+                  background: C.bar, opacity: 0.85, borderRadius: "4px 4px 0 0" }} />
+                {anyDiff && (
+                  <div style={{ position: "absolute", bottom: 0, left: "12%", right: "12%", height: (usual / max) * BAR_H,
+                    border: `1.5px dashed ${C.muted}`, borderBottom: "none", borderRadius: "4px 4px 0 0" }} />
+                )}
+              </div>
+              <div style={{ width: "100%", borderTop: `1px solid ${C.lineStrong}` }} />
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.fg }}>{letter}</div>
+              <div style={{ fontSize: 10, color: C.muted, marginTop: -3 }}>{pct(n)}%</div>
+            </div>
+          );
+        })}
+      </div>
+      {emptied.length > 0 && (
+        <div style={{ fontSize: 11, color: C.amber, fontWeight: 600, marginTop: 10 }}>
+          {emptied.map(([letter]) => `${letter} has no students with these cutoffs (${usualCounts[letter]} with the usual ones).`).join(" ")}
+          {" "}The grade above has taken them; moving its cutoff back up will give them back.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The raw (unrounded) scores either side of a cutoff: the lowest few in the grade and the
+// highest few below it, so the gap can be checked against the real numbers.
+function RawNeighbours({ sortedRaw, row, rounded, C, above = 2, below = 4 }) {
+  const inGrade = v => (rounded ? roundScore(v) : v) >= row.cutoff;
+  const firstIn = sortedRaw.findIndex(inGrade);
+  const split = firstIn === -1 ? sortedRaw.length : firstIn;
+  const aboveList = sortedRaw.slice(split, split + above).reverse();
+  const belowList = sortedRaw.slice(Math.max(0, split - below), split).reverse();
+  const gap = aboveList.length && belowList.length ? aboveList[aboveList.length - 1] - belowList[0] : null;
+  const mono = { fontFamily: "'JetBrains Mono', monospace", fontSize: 11 };
+
+  const line = (v, i, isIn) => {
+    const r = roundScore(v);
+    const oneShort = rounded && !isIn && r === row.cutoff - 1;
+    return (
+      <div key={`${isIn ? "a" : "b"}${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, ...mono,
+        color: isIn ? C.fg : oneShort ? C.amber : C.muted, fontWeight: oneShort ? 700 : 400 }}>
+        <span>{v.toFixed(2)}</span>
+        {rounded && <span style={{ opacity: 0.75 }}>→ {r}</span>}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ minWidth: 0 }} aria-label={`Raw scores around the ${row.letter} cutoff`}>
+      <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Raw scores</div>
+      {aboveList.length === 0 && <div style={{ ...mono, color: C.muted }}>none in grade</div>}
+      {aboveList.map((v, i) => line(v, i, true))}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "3px 0" }}>
+        <div style={{ flex: 1, borderTop: `2px solid ${C.accent}` }} />
+        <span style={{ ...mono, fontSize: 10, color: C.accent, whiteSpace: "nowrap" }}>
+          {rounded ? `≥ ${fmtNum(row.cutoff - 0.5)}` : `≥ ${fmtNum(row.cutoff)}`}
+        </span>
+      </div>
+      {belowList.map((v, i) => line(v, i, false))}
+      {belowList.length === 0 && <div style={{ ...mono, color: C.muted }}>none below</div>}
+      {gap !== null && (
+        <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>raw gap {fmtNum(gap)}</div>
+      )}
+    </div>
   );
 }
 
@@ -1006,12 +1166,270 @@ function ScaleEditor({ scale, onChange, problems, C }) {
   );
 }
 
-function GradeCutoffs({ scores, rows, bottom, scaleKey, onScale, customScale, onCustomScale, problems, windowPct, onWindow, outOf, onOutOf, onOverride, onReset, C }) {
+// ── Score line (all scores on one number line, with draggable cutoffs) ─────────
+
+function useElementWidth() {
+  const ref = useRef(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, width];
+}
+
+// Stack dots that would overlap into rows, lowest row first (a simple dot plot)
+function stackDots(values, x, r) {
+  const rowEnds = [];
+  return values.map(v => {
+    const px = x(v);
+    let level = rowEnds.findIndex(end => px - end >= 2 * r + 0.5);
+    if (level === -1) { level = rowEnds.length; rowEnds.push(px); } else rowEnds[level] = px;
+    return { v, px, level };
+  });
+}
+
+// Cutoff to use when a handle is dropped at value v: the tidy cutoff for the gap v falls in.
+// Anywhere inside a gap gives the same grades, so handles jump from gap to gap.
+function snapToGap(uniq, v) {
+  const i = uniq.findIndex(u => u >= v);
+  if (i === -1) return niceCutoff(uniq[uniq.length - 1], uniq[uniq.length - 1] + 1);
+  if (i === 0) return uniq[0];
+  return niceCutoff(uniq[i - 1], uniq[i]);
+}
+
+function ScoreLine({ scores, rows, bottom, counts, outOf, onOverride, rounded, C }) {
+  const [wrapRef, width] = useElementWidth();
+  const [dragging, setDragging] = useState(null);
+  const svgRef = useRef(null);
+
+  const raw = [...scores].sort((a, b) => a - b);
+  // In whole-number mode each student sits in the column of their rounded score
+  const sorted = rounded ? raw.map(roundScore) : raw;
+  const uniq = [...new Set(sorted)];
+  const countOf = new Map();
+  for (const v of sorted) countOf.set(v, (countOf.get(v) ?? 0) + 1);
+  const lowestNominal = rows.length ? rows[rows.length - 1].nominal : sorted[0];
+  const highestNominal = rows.length ? rows[0].nominal : sorted[sorted.length - 1];
+  // Show from a little below the lowest grade to the top score; anything lower is summarised at the left edge
+  const lo = Math.floor(Math.max(sorted[0], lowestNominal - 0.1 * outOf));
+  const hi = Math.ceil(Math.max(sorted[sorted.length - 1], highestNominal));
+  const hiddenCount = sorted.filter(v => v < lo).length;
+
+  const W = Math.max(width, 200);
+  const padL = hiddenCount ? 40 : 14, padR = 14;
+  // Columns are centred on whole numbers, so the axis runs half a point past each end,
+  // and a cutoff c is drawn on the boundary at c − 0.5
+  const dLo = rounded ? lo - 0.5 : lo, dHi = rounded ? hi + 0.5 : hi;
+  const off = rounded ? 0.5 : 0;
+  const x = v => padL + ((v - dLo) / (dHi - dLo || 1)) * (W - padL - padR);
+  const xToV = px => dLo + ((px - padL) / (W - padL - padR)) * (dHi - dLo);
+
+  const shown = sorted.map((v, i) => ({ v, raw: raw[i] })).filter(d => d.v >= lo);
+  let r, dots;
+  if (rounded) {
+    const colWidth = (W - padL - padR) / (dHi - dLo);
+    const tallest = Math.max(1, ...[...countOf.entries()].filter(([v]) => v >= lo).map(([, n]) => n));
+    r = Math.max(1.5, Math.min(4.5, colWidth / 2 - 0.6, (200 / tallest - 1.5) / 2));
+    const filled = new Map();
+    dots = shown.map(d => {
+      const level = filled.get(d.v) ?? 0;
+      filled.set(d.v, level + 1);
+      return { ...d, px: x(d.v), level };
+    });
+  } else {
+    const place = rr => stackDots(shown.map(d => d.v), x, rr).map((d, i) => ({ ...d, raw: shown[i].raw }));
+    r = 4.5; dots = place(r);
+    for (const smaller of [3.5, 2.5]) {
+      if (Math.max(0, ...dots.map(d => d.level)) <= 9) break;
+      r = smaller; dots = place(r);
+    }
+  }
+  const levels = Math.max(0, ...dots.map(d => d.level)) + 1;
+  const rowGap = 2 * r + 1.5;
+  const topH = 30;
+  const dotAreaH = Math.max(56, levels * rowGap + 14);
+  const axisY = topH + dotAreaH;
+  const H = axisY + 46;
+
+  // Gaps between neighbouring scores. A gap counts as a lull when it's much wider than the
+  // spacing around it, so sparse tails (where every gap is wide) don't light up.
+  const median = arr => { const s = [...arr].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
+  const gaps = [];
+  for (let i = 1; i < uniq.length; i++) gaps.push({ a: uniq[i - 1], b: uniq[i], size: uniq[i] - uniq[i - 1] });
+  const typical = median(gaps.map(g => g.size));
+  const NEIGHBOURS = 3;
+  const bigGaps = gaps
+    .map((g, i) => {
+      const around = [...gaps.slice(Math.max(0, i - NEIGHBOURS), i), ...gaps.slice(i + 1, i + 1 + NEIGHBOURS)].map(n => n.size);
+      return { ...g, ratio: g.size / (median(around) || g.size) };
+    })
+    .filter(g => g.b > lo && g.ratio >= 2.5 && g.size >= 2 * typical)
+    .map(g => ({ ...g, a: Math.max(g.a, lo) }));
+
+  // Whole-number mode: the lulls that matter are whole numbers nobody rounds to, just below
+  // a place a cutoff could go (inside each grade's search range)
+  const emptyColumns = new Set();
+  if (rounded) {
+    for (const row of rows) {
+      for (let k = row.floor - 1; k <= row.nominal - 1; k++) if (k >= lo && !countOf.has(k)) emptyColumns.add(k);
+    }
+  }
+
+  // Grade bands between cutoffs
+  const edges = [dHi, ...rows.map(row => row.cutoff - off), dLo];
+  const bands = edges.slice(0, -1).map((top, i) => {
+    const bottomEdge = Math.max(dLo, Math.min(dHi, edges[i + 1]));
+    const topEdge = Math.max(dLo, Math.min(dHi, top));
+    const letter = i < rows.length ? rows[i].letter : bottom;
+    return { letter, x1: x(bottomEdge), x2: x(topEdge), n: counts[letter] ?? 0 };
+  });
+
+  const span = dHi - dLo || 1;
+  const pxPerPt = (W - padL - padR) / span;
+  const step = [1, 2, 5, 10, 20, 50].find(s => s * pxPerPt >= 36) ?? 100;
+  const ticks = [];
+  for (let t = Math.ceil(lo / step) * step; t <= hi; t += step) ticks.push(t);
+
+  // Move a cutoff, keeping grades in order
+  const moveTo = (i, value) => {
+    const above = i > 0 ? rows[i - 1].cutoff : Infinity;
+    const below = i + 1 < rows.length ? rows[i + 1].cutoff : -Infinity;
+    if (value < above && value > below && value !== rows[i].cutoff) onOverride(rows[i].letter, value);
+  };
+  const valueAt = e => xToV(e.clientX - svgRef.current.getBoundingClientRect().left);
+  const gapCutoffs = [...new Set(uniq.map((u, i) => i === 0 ? u : niceCutoff(uniq[i - 1], u)))].sort((a, b) => a - b);
+  // Whole numbers: snap to the nearest column boundary. Otherwise jump between gaps.
+  const snap = v => rounded ? Math.round(v + off) : snapToGap(uniq, v);
+  const onKey = (i, e) => {
+    const cur = rows[i].cutoff;
+    const up = e.key === "ArrowRight" || e.key === "ArrowUp";
+    const down = e.key === "ArrowLeft" || e.key === "ArrowDown";
+    let next = null;
+    if (rounded) next = up ? cur + 1 : down ? cur - 1 : null;
+    else if (up) next = gapCutoffs.find(c => c > cur + 1e-9);
+    else if (down) next = [...gapCutoffs].reverse().find(c => c < cur - 1e-9);
+    if (next != null) { e.preventDefault(); moveTo(i, next); }
+  };
+
+  return (
+    <div ref={wrapRef} style={{ padding: "0 18px 16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.fg }}>All scores</div>
+        <div style={{ fontSize: 11, color: C.muted }}>
+          {rounded
+            ? "One column per whole number. Drag a cutoff (or use the arrow keys) to move it. Green: nobody rounds to that number. Amber ring: one point short."
+            : "Drag a cutoff (or use the arrow keys) to move it from gap to gap. Green marks gaps much wider than the spacing around them."}
+        </div>
+      </div>
+      {width > 0 && (
+        <svg ref={svgRef} width={W} height={H} style={{ display: "block", overflow: "visible", userSelect: "none" }}
+          role="group" aria-label="All scores with grade cutoffs">
+          {/* grade bands */}
+          {bands.map((band, i) => (
+            <rect key={band.letter} x={band.x1} y={topH} width={Math.max(0, band.x2 - band.x1)} height={dotAreaH}
+              fill={i % 2 === 0 ? C.raised : "transparent"} />
+          ))}
+          {/* empty whole numbers near cutoffs */}
+          {[...emptyColumns].map(k => (
+            <rect key={`e${k}`} x={x(k - 0.5)} y={topH} width={Math.max(1, x(k + 0.5) - x(k - 0.5))} height={dotAreaH}
+              fill={C.green} fillOpacity={0.24}>
+              <title>{`Nobody rounds to ${k}`}</title>
+            </rect>
+          ))}
+          {/* big gaps */}
+          {!rounded && bigGaps.map((g, i) => (
+            <rect key={i} x={x(g.a)} y={topH} width={Math.max(1, x(g.b) - x(g.a))} height={dotAreaH}
+              fill={C.green} fillOpacity={0.12 + 0.3 * Math.min(1, Math.log(g.ratio / 2.5) / Math.log(8))}>
+              <title>{`${fmtNum(g.size)}-point gap between ${fmtNum(g.a)} and ${fmtNum(g.b)} (${g.ratio.toFixed(1)}× the spacing around it)`}</title>
+            </rect>
+          ))}
+          {/* axis */}
+          <line x1={padL} x2={W - padR} y1={axisY} y2={axisY} stroke={C.lineStrong} />
+          {ticks.map(t => (
+            <g key={t}>
+              <line x1={x(t)} x2={x(t)} y1={axisY} y2={axisY + 4} stroke={C.lineStrong} />
+              <text x={x(t)} y={axisY + 16} fontSize={10} fill={C.muted} textAnchor="middle" fontFamily="'JetBrains Mono', monospace">{fmtNum(t)}</text>
+            </g>
+          ))}
+          {hiddenCount > 0 && (
+            <text x={4} y={axisY - 8} fontSize={10} fill={C.muted} fontFamily="'JetBrains Mono', monospace">
+              ‹ {hiddenCount}
+              <title>{`${hiddenCount} lower score${hiddenCount === 1 ? "" : "s"} not shown`}</title>
+            </text>
+          )}
+          {/* band labels */}
+          {bands.map(band => band.x2 - band.x1 > 18 && (
+            <text key={band.letter} x={(band.x1 + band.x2) / 2} y={axisY + 36} textAnchor="middle" fontSize={11}>
+              <tspan fontWeight={800} fill={C.fg}>{band.letter}</tspan>
+              <tspan fill={C.muted} fontFamily="'JetBrains Mono', monospace" dx={4}>{band.n}</tspan>
+            </text>
+          ))}
+          {/* students */}
+          {dots.map((d, i) => {
+            const row = rows.find(rr => d.v >= rr.cutoff);
+            const shortOf = rounded ? rows.find(rr => d.v === rr.cutoff - 1) : null;
+            const label = rounded ? `${fmtNum(d.raw)} → ${d.v}` : fmtNum(d.v);
+            return (
+              <circle key={i} cx={d.px} cy={axisY - 6 - r - d.level * rowGap} r={r}
+                fill={row ? C.bar : C.muted} fillOpacity={row ? 0.85 : 0.5}
+                stroke={shortOf ? C.amber : "none"} strokeWidth={shortOf ? 2 : 0}>
+                <title>{`${label} → ${row ? row.letter : bottom}${shortOf ? ` (one point short of ${shortOf.letter})` : ""}`}</title>
+              </circle>
+            );
+          })}
+          {/* where the suggestion was, if a cutoff has been moved */}
+          {rows.map(row => row.cutoff !== row.suggested && row.suggested - off >= dLo && (
+            <path key={row.letter} d={`M${x(row.suggested - off) - 6},${topH + 1} h12 l-6,8 z`} fill={C.surface} stroke={C.muted} strokeWidth={1.2}
+              style={{ cursor: "pointer" }} onClick={() => onOverride(row.letter, null)}>
+              <title>{`Suggested ${row.letter} cutoff: ${fmtNum(row.suggested)} (click to go back)`}</title>
+            </path>
+          ))}
+          {/* cutoff handles */}
+          {rows.map((row, i) => {
+            if (row.cutoff - off < dLo || row.cutoff - off > dHi) return null;
+            const cx = x(row.cutoff - off);
+            const label = `${row.letter} ${fmtNum(row.cutoff)}`;
+            const pw = label.length * 6.6 + 14;
+            const active = dragging === row.letter;
+            return (
+              <g key={row.letter} tabIndex={0} role="slider"
+                aria-label={`${row.letter} cutoff`} aria-valuenow={row.cutoff} aria-valuemin={lo} aria-valuemax={hi}
+                style={{ cursor: "ew-resize", touchAction: "none", outline: "none" }}
+                onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setDragging(row.letter); }}
+                onPointerMove={e => { if (dragging === row.letter) moveTo(i, snap(valueAt(e))); }}
+                onPointerUp={() => setDragging(null)}
+                onPointerCancel={() => setDragging(null)}
+                onKeyDown={e => onKey(i, e)}
+              >
+                <line x1={cx} x2={cx} y1={8} y2={axisY} stroke="transparent" strokeWidth={16} />
+                <line x1={cx} x2={cx} y1={topH - 6} y2={axisY} stroke={C.accent} strokeWidth={active ? 2.5 : 2} />
+                <rect x={cx - pw / 2} y={2} width={pw} height={20} rx={10} fill={active ? C.bar : C.accent} />
+                <text x={cx} y={16} textAnchor="middle" fontSize={11} fontWeight={700} fill={C.surface} fontFamily="'JetBrains Mono', monospace">{label}</text>
+              </g>
+            );
+          })}
+        </svg>
+      )}
+    </div>
+  );
+}
+
+function GradeCutoffs({ scores: rawScores, rows, bottom, scaleKey, onScale, customScale, onCustomScale, problems, windowPct, onWindow, outOf, onOutOf, rounded, onRounded, onOverride, onReset, C }) {
   const [copied, setCopied] = useState(false);
+  // Everything in this panel works on the scores students will see
+  const scores = rounded ? rawScores.map(roundScore) : rawScores;
   const counts = gradeCounts(scores, rows, bottom);
+  // What the usual cutoffs would give, for comparison
+  const usualCounts = gradeCounts(scores, rows.map(r => ({ ...r, cutoff: r.nominal })), bottom);
   const total = scores.length;
   const overlap = rows.some((r, i) => i + 1 < rows.length && r.cutoff <= rows[i + 1].cutoff);
   const anyOverridden = rows.some(r => r.overridden);
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const sortedRaw = [...rawScores].sort((a, b) => a - b);
 
   const pickDot = (row, v) => {
     const below = scores.filter(s => s < v);
@@ -1021,7 +1439,8 @@ function GradeCutoffs({ scores, rows, bottom, scaleKey, onScale, customScale, on
   const copy = () => {
     const last = rows[rows.length - 1];
     if (!last) return;
-    const text = rows.map(r => `${r.letter} ≥ ${fmtNum(r.cutoff)}`).join(", ") + `, ${bottom} < ${fmtNum(last.cutoff)}`;
+    const text = rows.map(r => `${r.letter} ≥ ${fmtNum(r.cutoff)}`).join(", ") + `, ${bottom} < ${fmtNum(last.cutoff)}`
+      + (rounded ? " (after rounding to whole numbers)" : "");
     navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => {});
   };
 
@@ -1036,10 +1455,14 @@ function GradeCutoffs({ scores, rows, bottom, scaleKey, onScale, customScale, on
         <div style={{ maxWidth: 620 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.strong }}>Grade cutoffs</div>
           <div style={{ fontSize: 11, color: C.muted, marginTop: 3, lineHeight: 1.6 }}>
-            For each grade, this looks a little below the usual cutoff for a wide gap between students, so nobody
-            misses a grade by a hair. It favours gaps close to the usual cutoff, only ever lowers cutoffs, and never
-            goes more than halfway to the next grade.
-            Click a dot to make that student the lowest in the grade.
+            {rounded
+              ? <>Scores are rounded to whole numbers (89.5 → 90). For each grade, this looks a little below the usual cutoff for
+                  whole numbers nobody rounds to, so no one ends up one point short. It favours cutoffs close to the usual one,
+                  only ever lowers cutoffs, and never goes more than halfway to the next grade.</>
+              : <>For each grade, this looks a little below the usual cutoff for a wide gap between students, so nobody
+                  misses a grade by a hair. It favours gaps close to the usual cutoff, only ever lowers cutoffs, and never
+                  goes more than halfway to the next grade.</>}
+            {" "}Click a dot to make that student the lowest in the grade.
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -1067,6 +1490,10 @@ function GradeCutoffs({ scores, rows, bottom, scaleKey, onScale, customScale, on
           <span style={label}>Scores out of</span>
           <NumberField C={C} label="Scores out of" value={outOf} width={64} onCommit={v => { if (v > 0) onOutOf(v); }} />
         </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+          <input type="checkbox" checked={rounded} onChange={e => onRounded(e.target.checked)} style={{ accentColor: C.bar, width: 15, height: 15 }} />
+          <span style={{ fontSize: 12, color: C.fg }}>Round scores to whole numbers</span>
+        </label>
       </div>
 
       {scaleKey === "custom" && <ScaleEditor scale={customScale} onChange={onCustomScale} problems={problems} C={C} />}
@@ -1075,25 +1502,29 @@ function GradeCutoffs({ scores, rows, bottom, scaleKey, onScale, customScale, on
       )}
 
       {/* Grade counts */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "0 18px 14px" }}>
-        {Object.entries(counts).map(([letter, n]) => (
-          <div key={letter} style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 9, padding: "4px 10px", display: "flex", gap: 8, alignItems: "baseline" }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: C.fg }}>{letter}</span>
-            <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: C.accent }}>{n}</span>
-            <span style={{ fontSize: 10, color: C.muted }}>{total ? Math.round(n / total * 100) : 0}%</span>
-          </div>
-        ))}
-      </div>
+      {rows.length > 0 && (
+        <GradeHistogram counts={counts} usualCounts={usualCounts} total={total} C={C} />
+      )}
       {overlap && (
         <div style={{ color: C.red, fontSize: 12, padding: "0 18px 12px" }}>
           Some cutoffs overlap: each grade's cutoff should be higher than the one below it.
         </div>
       )}
 
+      {rows.length > 0 && (
+        <ScoreLine scores={rawScores} rows={rows} bottom={bottom} counts={counts} outOf={outOf} onOverride={onOverride} rounded={rounded} C={C} />
+      )}
+
       {/* One row per grade */}
       {rows.map(row => {
         const nearest = row.prev === null ? null : row.cutoff - row.prev;
-        const others = row.options.filter(o => o.cutoff !== row.cutoff).slice(0, 2);
+        // Whole-number mode: only offer alternatives that are no worse than having someone one point short
+        let others = row.options
+          .filter(o => o.cutoff !== row.cutoff && (!row.rounded || o.empty > 0 || o.oneShort < row.oneShort))
+          .slice(0, 2);
+        // Always offer the usual cutoff to compare against when the current one has moved off it
+        const usual = row.rounded && row.cutoff !== row.nominal && row.options.find(o => o.cutoff === row.nominal);
+        if (usual && !others.includes(usual)) others = [usual, ...others].slice(0, 3);
         return (
           <div key={row.letter} style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", padding: "12px 18px", borderTop: `1px solid ${C.line}` }}>
             <div style={{ flex: "0 0 52px" }}>
@@ -1116,10 +1547,24 @@ function GradeCutoffs({ scores, rows, bottom, scaleKey, onScale, customScale, on
                   <span style={{ fontSize: 10, fontWeight: 600, color: C.green, background: C.green + "1f", borderRadius: 10, padding: "2px 8px" }}>Suggested</span>
                 )}
               </div>
+              {row.rounded && (
+                <div style={{ fontSize: 12, fontWeight: 600, color: row.oneShort > 0 ? C.amber : C.green }}>
+                  {row.oneShort > 0
+                    ? `${plural(row.oneShort, "student")} one point short (at ${row.cutoff - 1})`
+                    : row.empty === Infinity ? "No one below this cutoff"
+                    : `Nobody one point short · ${plural(row.empty, "empty point")} below the cutoff`}
+                </div>
+              )}
+              {row.rounded && row.noEmptyNearby && !row.overridden && (
+                <div style={{ fontSize: 11, color: C.muted }}>
+                  No empty whole number within reach of {fmtNum(row.nominal)}, so the usual cutoff is kept.
+                  {row.oneShort > 0 && " Lower cutoffs below trade fewer students one point short for more students getting the grade."}
+                </div>
+              )}
               <div style={{ fontSize: 11, color: C.soft, lineHeight: 1.5 }}>
                 {nearest === null
                   ? "No scores below this cutoff."
-                  : <>Nearest score below: <b style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fmtNum(row.prev)}</b> ({fmtNum(nearest)} under)</>}
+                  : <>Nearest score below: <b style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fmtNum(row.prev)}</b> ({plural(+fmtNum(nearest), "point")} under)</>}
                 {" · "}
                 {row.moved > 0 ? `${row.moved} more student${row.moved === 1 ? "" : "s"} than the usual cutoff`
                   : row.moved < 0 ? `${-row.moved} fewer student${row.moved === -1 ? "" : "s"} than the usual cutoff`
@@ -1127,15 +1572,27 @@ function GradeCutoffs({ scores, rows, bottom, scaleKey, onScale, customScale, on
               </div>
               {others.length > 0 && (
                 <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 10, color: C.muted }}>Other gaps:</span>
-                  {others.map(o => (
-                    <button key={o.cutoff} onClick={() => onOverride(row.letter, o.cutoff)} title={`Cutoff ${fmtNum(o.cutoff)}: ${fmtNum(o.gap)}-point gap below`}
-                      style={{ ...btn, padding: "2px 8px", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
-                      {fmtNum(o.cutoff)} <span style={{ color: C.muted }}>({fmtNum(o.gap)} gap)</span>
-                    </button>
-                  ))}
+                  <span style={{ fontSize: 10, color: C.muted }}>{row.rounded ? "Also try:" : "Other gaps:"}</span>
+                  {others.map(o => {
+                    const note = !row.rounded ? `${fmtNum(o.gap)} gap`
+                      : o.empty === Infinity ? "no one below"
+                      : o.empty > 0 ? `${o.empty} empty${o.moved ? `, +${o.moved}` : ""}`
+                      : `${o.oneShort} short${o.moved ? `, +${o.moved}` : ""}`;
+                    return (
+                      <button key={o.cutoff} onClick={() => onOverride(row.letter, o.cutoff)}
+                        title={row.rounded
+                          ? `Cutoff ${fmtNum(o.cutoff)}: ${o.empty === Infinity ? "no one below" : o.empty > 0 ? `${plural(o.empty, "empty point")} below` : `${plural(o.oneShort, "student")} one point short`}${o.moved ? `, ${plural(o.moved, "more student")} get the grade` : ""}`
+                          : `Cutoff ${fmtNum(o.cutoff)}: ${note}`}
+                        style={{ ...btn, padding: "2px 8px", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
+                        {fmtNum(o.cutoff)} <span style={{ color: C.muted }}>({note})</span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
+            </div>
+            <div style={{ flex: "0 0 128px" }}>
+              <RawNeighbours sortedRaw={sortedRaw} row={row} rounded={rounded} C={C} />
             </div>
           </div>
         );
@@ -1302,7 +1759,9 @@ function HistogramTool() {
   const [outOf, setOutOf] = useState(100);
   const [cutoffOverrides, setCutoffOverrides] = useState({}); // letter -> cutoff typed or picked by hand
 
-  useEffect(() => { saveSettings({ gradeScale, gradeWindow, customScale }); }, [gradeScale, gradeWindow, customScale]);
+  const [roundScores, setRoundScores] = useState(() => loadSettings().roundScores ?? true);
+
+  useEffect(() => { saveSettings({ gradeScale, gradeWindow, customScale, roundScores }); }, [gradeScale, gradeWindow, customScale, roundScores]);
   const chartRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -1392,7 +1851,7 @@ function HistogramTool() {
   // Grade cutoffs always use every score, even when outliers are hidden from the chart
   const scale = activeScale(gradeScale, customScale);
   const gradeRows = (gradeOpen && scores)
-    ? computeGradeRows(scores, scale.grades, gradeWindow, outOf, cutoffOverrides)
+    ? computeGradeRows(scores, scale.grades, gradeWindow, outOf, cutoffOverrides, roundScores)
     : null;
 
   const sectionLabel = { fontSize: 9, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 5 };
@@ -1523,7 +1982,7 @@ function HistogramTool() {
                 <Bar dataKey="count" fill={C.bar} fillOpacity={0.8} radius={[3, 3, 0, 0]} />
                 <Line dataKey="curve" type="monotone" stroke={C.curve} strokeWidth={2} dot={false} />
                 {gradeRows && (
-                  <Customized component={CutoffLines} cutoffs={gradeRows.map(r => ({ letter: r.letter, value: r.cutoff }))}
+                  <Customized component={CutoffLines} cutoffs={gradeRows.map(r => ({ letter: r.letter, value: roundScores ? r.cutoff - 0.5 : r.cutoff }))}
                     binSize={binSize} dataMin={displayStats.min} color={C.fg} />
                 )}
               </ComposedChart>
@@ -1628,7 +2087,13 @@ function HistogramTool() {
           onWindow={setGradeWindow}
           outOf={outOf}
           onOutOf={v => { setOutOf(v); setCutoffOverrides({}); }}
-          onOverride={(letter, v) => setCutoffOverrides(o => ({ ...o, [letter]: v }))}
+          rounded={roundScores}
+          onRounded={v => { setRoundScores(v); setCutoffOverrides({}); }}
+          onOverride={(letter, v) => setCutoffOverrides(o => ({
+            ...o,
+            // With rounding on, cutoffs are whole numbers: a typed 89.5 becomes 90
+            [letter]: v == null || !roundScores ? v : Math.ceil(v - 1e-9),
+          }))}
           onReset={() => setCutoffOverrides({})}
           C={C}
         />
