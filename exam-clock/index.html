@@ -8,139 +8,171 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&family=JetBrains+Mono:wght@400..700&display=swap">
 <style>
-/* Layout: projector-first. Title strip, giant countdown, now / ends / elapsed row, progress bar, room notes; setup drawer below. */
+/* Layout: projector-first. Title strip, giant countdown, now / ends / elapsed row, progress bar, room notes; setup drawer below.
+   Design language follows Pulse: warm neutrals, near-black ink for almost everything, and the signal colour kept for
+   live state, the one primary action, and the final minutes. Numbers are set in mono. */
 :root {
-  --bg: #eff1f5;
-  --surface: #ffffff;
-  --fg: #141a2a;
-  --muted: #5d6680;
-  --line: #d4d9e4;
-  --accent: #2547a8;
-  --accent-soft: #dfe6f8;
-  --caution: #b46a00;
-  --caution-soft: #f7ead2;
-  --final: #c0342c;
-  --final-soft: #f8dcd9;
-  --corr: #7b2fa8;
-  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
-  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --font-ui: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --canvas: #faf8f4; --surface: #ffffff; --surface-2: #f3f0ea;
+  --ink: #1b1814; --ink-2: #4a453d; --muted: #847d72;
+  --hairline: #e8e3da; --hairline-strong: #d8d2c6;
+  --signal: #ee4d2e; --signal-bright: #ff5a36; --signal-soft: #fdece7;
+  --good: #1f8a5b; --good-soft: #e7f4ee;
+  --warn: #b9791b; --warn-soft: #f8f0df;
+  --radius: 14px; --radius-sm: 9px;
+  --shadow-card: 0 1px 2px rgba(27,24,20,.04), 0 6px 20px -8px rgba(27,24,20,.10);
+  --shadow-sheet: 0 -12px 40px -12px rgba(27,24,20,.30);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048;
-    --accent: #7d9cff; --accent-soft: #1d2747; --caution: #f0a73a; --caution-soft: #3a2b12;
-    --final: #ff6a5f; --final-soft: #3d1a19; --corr: #d29bff; color-scheme: dark;
+    --canvas: #15120f; --surface: #1f1b16; --surface-2: #272019;
+    --ink: #f5f1ea; --ink-2: #d9d2c6; --muted: #968d7f;
+    --hairline: rgba(255,255,255,.09); --hairline-strong: rgba(255,255,255,.16);
+    --signal: #ff5a36; --signal-soft: rgba(255,90,54,.14);
+    --good-soft: rgba(31,138,91,.16); --warn-soft: rgba(185,121,27,.18);
+    --shadow-card: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -10px rgba(0,0,0,.6);
+    --shadow-sheet: 0 -12px 40px -12px rgba(0,0,0,.7);
+    color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048;
-  --accent: #7d9cff; --accent-soft: #1d2747; --caution: #f0a73a; --caution-soft: #3a2b12;
-  --final: #ff6a5f; --final-soft: #3d1a19; --corr: #d29bff; color-scheme: dark;
+  --canvas: #15120f; --surface: #1f1b16; --surface-2: #272019;
+  --ink: #f5f1ea; --ink-2: #d9d2c6; --muted: #968d7f;
+  --hairline: rgba(255,255,255,.09); --hairline-strong: rgba(255,255,255,.16);
+  --signal: #ff5a36; --signal-soft: rgba(255,90,54,.14);
+  --good-soft: rgba(31,138,91,.16); --warn-soft: rgba(185,121,27,.18);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -10px rgba(0,0,0,.6);
+  --shadow-sheet: 0 -12px 40px -12px rgba(0,0,0,.7);
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
-  background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px;
+  background: var(--canvas); color: var(--ink); font-family: var(--font-ui); font-size: 15px;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: 12px 20px;
 }
+::selection { background: var(--signal); color: #fff; }
+@keyframes live-dot { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 .app { max-width: 1150px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; min-height: 100%; }
 
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.brand { font-family: var(--display); font-weight: 600; font-size: 1.1rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0; }
-.hdr-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.brand { font-weight: 800; font-size: 1.1rem; letter-spacing: -.02em; color: var(--ink); margin: 0; }
+.hdr-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
-button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); padding: 9px 14px; font-weight: 500; }
-button:hover { border-color: var(--muted); }
-button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+/* Buttons: ghost by default (surface, hairline border); the one primary action is signal */
+button { font: inherit; font-weight: 600; cursor: pointer; border-radius: var(--radius-sm); border: 1px solid var(--hairline-strong); background: var(--surface); color: var(--ink-2); padding: 9px 14px; transition: background-color .15s, border-color .15s, color .15s; }
+button:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 button:disabled { opacity: .45; cursor: default; }
-.ghost { background: transparent; }
+.ghost { background: transparent; border-color: var(--hairline); color: var(--muted); font-weight: 500; font-size: .875rem; padding: 7px 12px; }
 
 /* Stage */
-.stage { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: clamp(16px, 3vw, 34px); display: grid; gap: clamp(10px, 2vw, 18px); flex: 1; align-content: center; transition: background .4s, border-color .4s; }
-.stage[data-level="caution"] { background: var(--caution-soft); border-color: var(--caution); }
-.stage[data-level="final"], .stage[data-level="over"] { background: var(--final-soft); border-color: var(--final); }
+.stage { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius); box-shadow: var(--shadow-card); padding: clamp(16px, 3vw, 34px); display: grid; gap: clamp(10px, 2vw, 18px); flex: 1; align-content: center; transition: background-color .4s, border-color .4s; }
+.stage[data-level="caution"] { background: var(--warn-soft); border-color: var(--warn); }
+.stage[data-level="final"], .stage[data-level="over"] { background: var(--signal-soft); border-color: var(--signal); }
 
-.title-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.exam-title { font-family: var(--display); font-weight: 600; font-size: clamp(1.5rem, 4vw, 2.8rem); margin: 0; text-wrap: balance; min-width: 0; }
-.pill { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .12em; font-size: clamp(.95rem, 2vw, 1.35rem); padding: 6px 16px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
-.stage[data-level="ready"] .pill { background: var(--line); color: var(--muted); }
-.stage[data-level="caution"] .pill { background: var(--caution); color: var(--surface); }
-.stage[data-level="final"] .pill, .stage[data-level="over"] .pill { background: var(--final); color: var(--surface); }
-.stage[data-level="paused"] .pill { background: var(--caution-soft); color: var(--caution); }
+.title-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.exam-title { font-weight: 800; letter-spacing: -.02em; font-size: clamp(1.5rem, 4vw, 2.8rem); line-height: 1.1; margin: 0; text-wrap: balance; min-width: 0; }
+/* Status pill. Live states carry the pulsing dot, as in Pulse */
+.pill { display: inline-flex; align-items: center; gap: .55em; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: clamp(.9rem, 1.8vw, 1.25rem); padding: .4em 1em; border-radius: 999px; background: var(--signal-soft); color: var(--signal); white-space: nowrap; }
+.stage[data-level="running"] .pill::before, .stage[data-level="caution"] .pill::before, .stage[data-level="final"] .pill::before { content: ""; flex: none; width: .5em; height: .5em; border-radius: 50%; background: currentColor; animation: live-dot 1.4s ease-in-out infinite; }
+.stage[data-level="ready"] .pill { background: var(--surface-2); color: var(--muted); }
+.stage[data-level="caution"] .pill { background: var(--warn); color: #fff; }
+.stage[data-level="final"] .pill, .stage[data-level="over"] .pill { background: var(--signal); color: #fff; }
+.stage[data-level="paused"] .pill { background: var(--warn-soft); color: var(--warn); }
 
-.label { font-size: .8rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 600; }
+.label { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
 .countdown-wrap { text-align: center; display: grid; gap: 4px; }
-.countdown { font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; line-height: .88; font-size: clamp(5.5rem, 24vw, 19rem); color: var(--accent); }
-.countdown .unit { font-size: .38em; font-weight: 600; margin-left: .08em; }
-.stage[data-level="ready"] .countdown { color: var(--fg); }
-.stage[data-level="caution"] .countdown { color: var(--caution); }
-.stage[data-level="final"] .countdown, .stage[data-level="over"] .countdown { color: var(--final); }
-.stage[data-level="over"] .countdown { font-size: clamp(3.5rem, 13vw, 10rem); line-height: 1; }
-.overtime { font-family: var(--display); font-size: clamp(1.2rem, 3vw, 2rem); color: var(--final); font-variant-numeric: tabular-nums; }
+.countdown { font-family: var(--font-mono); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.04em; line-height: .9; font-size: clamp(4rem, 20vw, 16rem); color: var(--ink); }
+.countdown .unit { font-family: var(--font-ui); font-size: .32em; font-weight: 600; letter-spacing: 0; margin-left: .15em; }
+.stage[data-level="caution"] .countdown { color: var(--warn); }
+.stage[data-level="final"] .countdown, .stage[data-level="over"] .countdown { color: var(--signal); }
+.stage[data-level="over"] .countdown { font-family: var(--font-ui); font-weight: 800; letter-spacing: -.03em; font-size: clamp(3.2rem, 11vw, 8.5rem); line-height: 1; }
+.overtime { font-family: var(--font-mono); font-weight: 600; font-size: clamp(1.2rem, 3vw, 2rem); color: var(--signal); font-variant-numeric: tabular-nums; }
 
-.bar-row { display: flex; align-items: center; gap: 14px; }
-.bar-row .bar { flex: 1; min-width: 0; }
-.bar-track { position: relative; flex: 1; min-width: 0; padding-bottom: 20px; }
-.bar-track .bar > i { transition: width .25s linear; }
-.marks { position: absolute; inset: 0; pointer-events: none; }
-.mark { position: absolute; top: -4px; width: 2px; height: 20px; margin-left: -1px; background: var(--fg); opacity: .35; border-radius: 1px; }
-.mark span { position: absolute; top: 22px; left: 50%; transform: translateX(-50%); font-size: .78rem; font-weight: 600; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
-.mark.passed { opacity: .15; }
-@media (prefers-reduced-motion: reduce) { .bar-track .bar > i { transition: none; } }
-.bar { height: 12px; background: var(--line); border-radius: 99px; overflow: hidden; }
-.bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; }
-.stage[data-level="caution"] .bar > i { background: var(--caution); }
-.stage[data-level="final"] .bar > i, .stage[data-level="over"] .bar > i { background: var(--final); }
+/* Thick draining bar: percentage rides inside the fill, warning ticks below */
+.bar-row { display: flex; align-items: center; gap: 14px; --barh: clamp(30px, 5vw, 56px); }
+.bar-track { position: relative; flex: 1; min-width: 0; padding-bottom: clamp(1.9rem, 3.2vw, 2.6rem); }
+.bar { height: var(--barh); position: relative; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hairline); border-radius: var(--radius-sm); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--signal); border-radius: var(--radius-sm) 0 0 var(--radius-sm); transition: width .25s linear; }
+.stage[data-level="ready"] .bar > i { background: var(--hairline-strong); }
+.stage[data-level="paused"] .bar > i { background: var(--muted); }
+.stage[data-level="caution"] .bar > i { background: var(--warn); }
+.stage[data-level="final"] .bar > i, .stage[data-level="over"] .bar > i { background: var(--signal); }
+.pct-in { position: absolute; top: 50%; transform: translate(-50%, -50%); z-index: 3; font-family: var(--font-mono); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; font-size: clamp(1rem, 2.7vw, 2rem); line-height: 1; white-space: nowrap; color: #fff; }
+.stage[data-level="ready"] .pct-in { color: var(--ink-2); }
+.pct-in.outside { color: var(--signal); transform: translateY(-50%); }
+.stage[data-level="ready"] .pct-in.outside, .stage[data-level="paused"] .pct-in.outside { color: var(--muted); }
+.stage[data-level="caution"] .pct-in.outside { color: var(--warn); }
+.stage[data-level="final"] .pct-in.outside, .stage[data-level="over"] .pct-in.outside { color: var(--signal); }
+.marks { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.mark { position: absolute; top: -7px; }
+.mark::before { content: ""; position: absolute; left: -2px; top: 0; width: 4px; height: calc(var(--barh) + 16px); border-radius: 2px; background: var(--ink); box-shadow: 0 0 0 2px var(--surface); opacity: .7; }
+.mark span { position: absolute; top: calc(var(--barh) + 14px); left: 50%; transform: translateX(-50%); font-family: var(--font-mono); font-size: clamp(.9rem, 1.8vw, 1.3rem); font-weight: 600; color: var(--ink); white-space: nowrap; }
+.mark.passed::before { opacity: .2; }
+.mark.passed span { opacity: .35; }
+@media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
 
 .readouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.readout { display: grid; gap: 2px; text-align: center; min-width: 0; }
-.readout .v { font-family: var(--display); font-weight: 600; font-variant-numeric: tabular-nums; font-size: clamp(1.7rem, 5.5vw, 4.2rem); line-height: 1; }
-.readout .v small { font-size: .5em; color: var(--muted); font-weight: 500; }
+.readout { display: grid; gap: 4px; text-align: center; min-width: 0; }
+.readout .v { font-family: var(--font-mono); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.03em; font-size: clamp(2rem, 6.8vw, 5.2rem); line-height: 1; }
+.readout .label { font-size: clamp(.85rem, 1.4vw, 1.1rem); }
+.readout .v small, .corr-time small { font-family: var(--font-ui); font-size: .45em; font-weight: 600; letter-spacing: .02em; color: var(--muted); margin-left: .2em; }
+.corr-time small { font-size: .85em; }
 
-.banner { text-align: center; font-family: var(--display); font-weight: 700; font-size: clamp(1.4rem, 4vw, 2.6rem); letter-spacing: .02em; padding: 8px 12px; border-radius: 10px; background: var(--fg); color: var(--surface); }
+.banner { text-align: center; font-weight: 800; letter-spacing: -.01em; font-size: clamp(1.4rem, 4vw, 2.6rem); padding: 10px 14px; border-radius: var(--radius-sm); background: var(--ink); color: var(--canvas); }
 
-.notes { list-style: none; margin: 0; padding: 14px 0 0; border-top: 1px solid var(--line); display: grid; gap: 6px; font-size: clamp(1.05rem, 2.2vw, 1.6rem); }
-.stage[data-level="caution"] .notes { border-color: var(--caution); }
-.stage[data-level="final"] .notes, .stage[data-level="over"] .notes { border-color: var(--final); }
-.notes li { display: flex; gap: 10px; align-items: baseline; }
-.notes li::before { content: ""; flex: none; width: .45em; height: .45em; border-radius: 2px; background: var(--muted); transform: translateY(-.1em); }
+.notes { list-style: none; margin: 0; padding: 14px 0 0; border-top: 1px solid var(--hairline); display: grid; gap: 6px; font-size: clamp(1.05rem, 2.2vw, 1.6rem); }
+.stage[data-level="caution"] .notes { border-color: var(--warn); }
+.stage[data-level="final"] .notes, .stage[data-level="over"] .notes { border-color: var(--signal); }
+.notes li { display: flex; gap: 12px; align-items: baseline; }
+.notes li::before { content: ""; flex: none; width: .4em; height: .4em; border-radius: 50%; background: var(--muted); transform: translateY(-.12em); }
 
 /* Controls */
 .controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 .controls button { padding: 13px 20px; font-size: 1.05rem; }
-#startBtn { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 600; min-width: 170px; }
-#startBtn.paused { background: var(--caution); border-color: var(--caution); }
+#startBtn { background: var(--signal); border-color: var(--signal); color: #fff; font-weight: 700; min-width: 170px; }
+#startBtn:hover:not(:disabled) { background: var(--signal-bright); border-color: var(--signal-bright); color: #fff; }
+#startBtn.paused, #startBtn.paused:hover:not(:disabled) { background: var(--warn); border-color: var(--warn); }
 .confirm { display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; }
-.confirm .danger { background: var(--final); border-color: var(--final); color: var(--surface); }
+.confirm .danger, .confirm .danger:hover:not(:disabled) { background: var(--signal); border-color: var(--signal); color: #fff; }
 .keys { text-align: center; color: var(--muted); font-size: .85rem; }
-kbd { font-family: var(--body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--surface); color: var(--fg); }
+kbd { font-family: var(--font-mono); font-size: .8em; border: 1px solid var(--hairline-strong); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; background: var(--surface); color: var(--ink-2); }
 
 /* Setup */
-.settings { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: grid; gap: 14px; }
-.settings h2 { margin: 0; font-family: var(--display); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; font-size: 1.05rem; }
+.settings { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius); box-shadow: var(--shadow-card); padding: 18px 20px; display: grid; gap: 14px; }
+.settings h2 { margin: 0; font-weight: 800; letter-spacing: -.01em; font-size: 1.05rem; }
 .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
-.field { display: grid; gap: 5px; min-width: 0; align-content: start; }
+.field { display: grid; gap: 6px; min-width: 0; align-content: start; }
 .field.wide { grid-column: 1 / -1; }
-.field > label, .field > .flabel { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.field > label, .field > .flabel { font-size: .75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .field input[type=text], .field input[type=number], .field input[type=time], .field textarea {
-  font: inherit; font-size: 1.05rem; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); width: 100%; font-variant-numeric: tabular-nums;
+  font: inherit; font-size: 1.05rem; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--hairline-strong); background: var(--surface); color: var(--ink); width: 100%; font-variant-numeric: tabular-nums; transition: border-color .15s, box-shadow .15s;
 }
+.field input[type=number], .field input[type=time], #warnIn { font-family: var(--font-mono); font-size: 1rem; }
+.field input:focus-visible, .field textarea:focus-visible { outline: none; border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal); }
+.field input:disabled { opacity: .55; }
 .field textarea { min-height: 96px; resize: vertical; line-height: 1.45; }
-.seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.seg label { flex: 1; text-align: center; padding: 8px; cursor: pointer; font-size: .95rem; }
+.seg { display: flex; border: 1px solid var(--hairline-strong); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+.seg label { flex: 1; text-align: center; padding: 8px; cursor: pointer; font-size: .95rem; color: var(--muted); transition: background-color .15s, color .15s; }
+.seg label + label { border-left: 1px solid var(--hairline); }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
-.seg label:has(input:checked) { background: var(--accent); color: var(--surface); }
-.seg label:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: -3px; }
+.seg label:has(input:checked) { background: var(--surface-2); color: var(--ink); font-weight: 600; }
+.seg label:has(input:disabled) { cursor: default; opacity: .6; }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--signal); outline-offset: -2px; }
 .checks { display: flex; gap: 18px; flex-wrap: wrap; }
-.check { display: flex; align-items: center; gap: 8px; font-size: .95rem; }
-.check input { width: 18px; height: 18px; accent-color: var(--accent); }
-.note { font-size: .84rem; color: var(--muted); margin: 0; }
-.err { color: var(--final); font-size: .9rem; margin: 0; }
+.check { display: flex; align-items: center; gap: 8px; font-size: .95rem; color: var(--ink-2); }
+.check input { width: 18px; height: 18px; accent-color: var(--signal); }
+.check input:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.note { font-size: .84rem; color: var(--muted); margin: 0; line-height: 1.5; }
+.err { color: var(--signal); font-size: .9rem; font-weight: 600; margin: 0; }
 
 body.focus .settings, body.focus .keys, body.focus .brand { display: none; }
 
@@ -149,61 +181,60 @@ body.focus .settings, body.focus .keys, body.focus .brand { display: none; }
   .controls button { flex: 1 1 40%; padding: 12px; }
   #startBtn { flex-basis: 100%; }
 }
-@media (prefers-reduced-motion: reduce) { .stage { transition: none; } }
-
-/* Thick draining bar: percentage rides inside the fill, warning ticks below */
-.bar-row { --barh: clamp(30px, 5vw, 56px); }
-.bar-track { padding-bottom: clamp(1.9rem, 3.2vw, 2.6rem); }
-.bar-row .bar { height: var(--barh); border-radius: 10px; position: relative; }
-.bar-row .bar > i { border-radius: 10px 0 0 10px; }
-.pct-in { position: absolute; top: 50%; transform: translate(-50%, -50%); z-index: 3; font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; font-size: clamp(1rem, 2.7vw, 2rem); line-height: 1; white-space: nowrap; color: var(--surface); }
-.pct-in.outside { color: var(--accent); transform: translateY(-50%); }
-.stage[data-level="ready"] .pct-in.outside, .stage[data-level="paused"] .pct-in.outside { color: var(--muted); }
-.stage[data-level="caution"] .pct-in.outside { color: var(--caution); }
-.stage[data-level="final"] .pct-in.outside, .stage[data-level="over"] .pct-in.outside { color: var(--final); }
-.marks { z-index: 2; }
-.mark { top: -7px; width: 0; height: auto; margin: 0; background: none; opacity: 1; border-radius: 0; }
-.mark::before { content: ""; position: absolute; left: -2px; top: 0; width: 4px; height: calc(var(--barh) + 16px); border-radius: 2px; background: var(--fg); opacity: .6; }
-.mark span { top: calc(var(--barh) + 14px); font-family: var(--display); font-size: clamp(.95rem, 1.9vw, 1.4rem); font-weight: 700; letter-spacing: .02em; color: var(--fg); }
-.mark.passed { opacity: 1; }
-.mark.passed::before { opacity: .2; }
-.mark.passed span { opacity: .35; }
+@media (prefers-reduced-motion: reduce) {
+  .stage { transition: none; }
+  .pill::before { animation: none !important; }
+}
 
 /* Corrections: side panel appears once one is posted; the clock column narrows and scales to fit */
 .main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; flex: 1; }
 body.has-corr .main { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
 body.has-corr .app { max-width: 1700px; }
 .stage { container-type: inline-size; }
-body.has-corr .countdown { font-size: clamp(4.5rem, 25cqi, 17rem); }
-body.has-corr .stage[data-level="over"] .countdown { font-size: clamp(3rem, 14cqi, 9rem); }
-body.has-corr .readout .v { font-size: clamp(1.5rem, 6cqi, 3.8rem); }
-.corrections { background: var(--surface); border: 3px solid var(--corr); border-radius: 14px; padding: clamp(14px, 2vw, 24px); display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
-.corr-head { margin: 0; font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .1em; font-size: clamp(1.2rem, 2vw, 1.7rem); color: var(--corr); }
+body.has-corr .countdown { font-size: clamp(3.5rem, 21cqi, 14.5rem); }
+body.has-corr .stage[data-level="over"] .countdown { font-size: clamp(2.8rem, 12cqi, 7.5rem); }
+body.has-corr .readout .v { font-size: clamp(1.8rem, 7.4cqi, 4.7rem); }
+.corrections { background: var(--surface); border: 2px solid var(--ink); border-radius: var(--radius); box-shadow: var(--shadow-card); padding: clamp(14px, 2vw, 24px); display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+.corr-head { margin: 0; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: clamp(1.1rem, 1.8vw, 1.5rem); color: var(--ink); }
 .corr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; overflow-y: auto; align-content: start; }
-.corr-item { display: grid; gap: 4px; padding-top: 12px; border-top: 1px solid var(--line); }
+.corr-item { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid var(--hairline); }
 .corr-item:first-child { border-top: 0; padding-top: 0; }
-.corr-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.corr-q { font-family: var(--display); font-weight: 700; font-size: clamp(1.5rem, 2.6vw, 2.3rem); line-height: 1; color: var(--corr); }
-.corr-time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: clamp(.9rem, 1.3vw, 1.1rem); }
+.corr-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.corr-q { font-family: var(--font-mono); font-weight: 700; letter-spacing: -.02em; font-size: clamp(1.3rem, 2.3vw, 2rem); line-height: 1.1; color: var(--ink); background: var(--surface-2); border-radius: 7px; padding: .05em .35em; }
+.corr-time { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; font-size: clamp(.85rem, 1.2vw, 1rem); }
 .corr-tools { margin-left: auto; display: flex; gap: 4px; opacity: .3; transition: opacity .15s; }
 .corr-item:hover .corr-tools, .corr-tools:focus-within { opacity: 1; }
-.corr-tools button { padding: 3px 8px; font-size: .8rem; background: transparent; }
-.corr-tools button.armed { background: var(--final); border-color: var(--final); color: var(--surface); opacity: 1; }
+.corr-tools button { padding: 3px 8px; font-size: .8rem; font-weight: 500; background: transparent; }
+.corr-tools button.armed, .corr-tools button.armed:hover { background: var(--signal); border-color: var(--signal); color: #fff; opacity: 1; }
 .corr-text { margin: 0; font-size: clamp(1.15rem, 2vw, 1.75rem); line-height: 1.3; overflow-wrap: anywhere; }
-.controls .corr-btn { border-color: var(--corr); color: var(--corr); font-weight: 600; }
-.corr-entry { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: var(--surface); border-top: 4px solid var(--corr); box-shadow: 0 -8px 30px rgba(0, 0, 0, .18);
+.controls .corr-btn { border-color: var(--ink-2); color: var(--ink); }
+.corr-entry { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: var(--surface); border-top: 2px solid var(--ink); box-shadow: var(--shadow-sheet);
   padding-block: 14px calc(12px + env(safe-area-inset-bottom, 0px));
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .corr-entry-in { max-width: 1400px; margin: 0 auto; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-.corr-entry-label { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--corr); font-size: 1.15rem; }
-.corr-entry input { font: inherit; font-size: 1.25rem; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); min-width: 0; }
-.corr-entry input:focus-visible { outline: 3px solid var(--corr); outline-offset: 1px; }
-#corrQ { width: 7.5em; flex: none; }
+.corr-entry-label { font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: var(--ink); font-size: 1rem; }
+.corr-entry input { font: inherit; font-size: 1.25rem; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--hairline-strong); background: var(--canvas); color: var(--ink); min-width: 0; transition: border-color .15s, box-shadow .15s; }
+.corr-entry input:focus-visible { outline: none; border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal); }
+#corrQ { width: 7.5em; flex: none; font-family: var(--font-mono); font-size: 1.15rem; }
 #corrText { flex: 1 1 320px; }
 .corr-entry button { padding: 11px 18px; font-size: 1.05rem; }
-.corr-entry .corr-post { background: var(--corr); border-color: var(--corr); color: var(--surface); font-weight: 600; }
+.corr-entry .corr-post, .corr-entry .corr-post:hover { background: var(--signal); border-color: var(--signal); color: #fff; font-weight: 700; }
+.corr-entry .corr-post:hover { background: var(--signal-bright); border-color: var(--signal-bright); }
 .corr-entry-hint { max-width: 1400px; margin: 6px auto 0; color: var(--muted); font-size: .85rem; }
 @media (max-width: 860px) { body.has-corr .main { grid-template-columns: minmax(0, 1fr); } }
+
+/* After-exam timers: a row of buttons that appears once time is up; the running one's name sits above the countdown */
+.label.phase { font-size: clamp(1.2rem, 3.4vw, 2.5rem); font-weight: 800; letter-spacing: .04em; color: var(--ink); }
+.after { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; align-items: center; }
+.after-label { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; flex-basis: 100%; text-align: center; }
+.after-btns { display: contents; }
+.after button { padding: 13px 20px; font-size: 1.05rem; }
+.after button.next { background: var(--signal); border-color: var(--signal); color: #fff; font-weight: 700; }
+.after button.next:hover:not(:disabled) { background: var(--signal-bright); border-color: var(--signal-bright); color: #fff; }
+.after button.current { border-color: var(--signal); color: var(--signal); }
+.after-custom { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+.after-custom input { font: inherit; font-family: var(--font-mono); font-size: 1rem; width: 4.5em; padding: 11px 8px; border-radius: var(--radius-sm); border: 1px solid var(--hairline-strong); background: var(--surface); color: var(--ink); }
+.after-custom input:focus-visible { outline: none; border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal); }
 </style>
 </head>
 <body>
@@ -237,7 +268,7 @@ body.has-corr .readout .v { font-size: clamp(1.5rem, 6cqi, 3.8rem); }
     <div class="readouts">
       <div class="readout"><div class="label">Current time</div><div class="v" id="nowOut">—</div></div>
       <div class="readout"><div class="label" id="endsLabel">Would end at</div><div class="v" id="endsOut">—</div></div>
-      <div class="readout"><div class="label">Elapsed</div><div class="v" id="elapsedOut">0:00</div></div>
+      <div class="readout"><div class="label" id="elapsedLabel">Elapsed</div><div class="v" id="elapsedOut">0:00</div></div>
     </div>
 
     <div class="banner" id="banner" hidden></div>
@@ -263,6 +294,15 @@ body.has-corr .readout .v { font-size: clamp(1.5rem, 6cqi, 3.8rem); }
     <button class="danger" id="confirmYes">Yes, reset</button>
     <button id="confirmNo">Cancel</button>
   </div>
+  <div class="after" id="after" hidden>
+    <span class="after-label">After the exam</span>
+    <div class="after-btns" id="afterBtns"></div>
+    <form class="after-custom" id="customForm" autocomplete="off">
+      <label for="customMin">Other</label>
+      <input type="number" id="customMin" min="1" max="180" value="3"><span>min</span>
+      <button type="submit">Start</button>
+    </form>
+  </div>
   <div class="keys"><kbd>Space</kbd> start / pause &nbsp;·&nbsp; <kbd>+</kbd> / <kbd>−</kbd> add or remove a minute &nbsp;·&nbsp; <kbd>C</kbd> add a correction</div>
 
   <section class="settings" id="settings">
@@ -282,13 +322,18 @@ body.has-corr .readout .v { font-size: clamp(1.5rem, 6cqi, 3.8rem); }
       <div class="field wide"><label for="notesIn">Notes shown on screen (one per line)</label>
         <textarea id="notesIn">Phones in bag, Bags on the wall
 Write your name and NetID on every page</textarea></div>
+      <div class="field wide"><label for="afterIn">After-exam timers (one per line: name, minutes)</label>
+        <textarea id="afterIn">Grace period, 2
+Pass exams to the aisle, 1</textarea></div>
     </div>
     <div class="checks">
       <label class="check"><input type="checkbox" id="secIn" checked> Show seconds on the countdown</label>
       <label class="check"><input type="checkbox" id="h24In"> 24-hour clock</label>
+      <label class="check"><input type="checkbox" id="autoAfterIn"> Run after-exam timers automatically, one after another</label>
     </div>
     <p class="err" id="err" hidden></p>
     <p class="note">Warnings show a banner and play a soft chime. The countdown turns amber at the second-to-last warning and red at the last one. If the page reloads during an exam, the clock picks up where it was.</p>
+    <p class="note">When time is up, a button for each after-exam timer appears under the clock, plus an "Other" box for a one-off timer. <kbd>Space</kbd> starts the next one, and pauses or resumes it. <kbd>+</kbd> / <kbd>−</kbd> adjust whichever timer is running.</p>
   </section>
 </div>
 
@@ -309,13 +354,20 @@ Write your name and NetID on every page</textarea></div>
   const KEY = 'examRoomClock';
   const S = { title: 'Exam 2', mode: 'duration', dur: 80, end: '11:20', warn: '30, 15, 5, 1',
     notes: 'Phones in bag, Bags on the wall\nWrite your name and NetID on every page',
-    sec: true, h24: false, sound: true };
+    sec: true, h24: false, sound: true, after: 'Grace period, 2\nPass exams to the aisle, 1', autoAfter: false };
   // run: status ready|running|paused|over, endAt ms, totalMs, remainingMs (paused), fired {min:true}
-  let R = { status: 'ready', endAt: 0, totalMs: 0, remainingMs: 0, fired: {}, corr: [] };
+  // post: the after-exam timer, once the exam is over: { i (index in the after list), custom, name, totalMs, endAt, remainingMs, status running|paused|over }
+  let R = { status: 'ready', endAt: 0, totalMs: 0, remainingMs: 0, fired: {}, corr: [], post: null };
   try { const saved = JSON.parse(localStorage.getItem(KEY) || '{}'); Object.assign(S, saved.S || {}); if (saved.R) R = Object.assign(R, saved.R); } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ S, R })); } catch (e) {} };
 
   const warnList = () => [...new Set(S.warn.split(/[^0-9.]+/).map(Number).filter(n => n > 0))].sort((a, b) => b - a);
+  // "Grace period, 2" / "Pass exams to the aisle - 1 min" → { name, min }
+  const afterList = () => (S.after || '').split('\n').map(line => {
+    const m = /^(.*?)[\s,:;–—-]*(\d+(?:\.\d+)?)\s*(?:m|mins?|minutes?)?\.?\s*$/i.exec(line.trim());
+    if (!m || !(+m[2] > 0)) return null;
+    return { name: m[1].trim() || 'Timer', min: Math.min(180, +m[2]) };
+  }).filter(Boolean);
 
   // ---- formatting ----
   const pad = n => String(n).padStart(2, '0');
@@ -330,7 +382,12 @@ Write your name and NetID on every page</textarea></div>
     let h = d.getHours(); const m = d.getMinutes(), s = d.getSeconds();
     if (S.h24) return pad(h) + ':' + pad(m) + (withSec ? ':' + pad(s) : '');
     const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
-    return h + ':' + pad(m) + (withSec ? ':' + pad(s) : '') + ' <small>' + ap + '</small>';
+    return h + ':' + pad(m) + (withSec ? ':' + pad(s) : '') + '<small>' + ap + '</small>';
+  }
+  function fmtMins(m) {
+    if (Number.isInteger(m)) return m + ' min';
+    const s = Math.round(m * 60);
+    return s >= 60 ? Math.floor(s / 60) + ':' + pad(s % 60) + ' min' : s + ' sec';
   }
 
   // ---- audio: soft chimes ----
@@ -361,7 +418,7 @@ Write your name and NetID on every page</textarea></div>
       else if (!on && wl) { await wl.release(); wl = null; }
     } catch (e) { wl = null; }
   }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && R.status === 'running') wake(true); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && (R.status === 'running' || postLive())) wake(true); });
 
   // ---- banner ----
   let bannerTimer = null;
@@ -396,10 +453,34 @@ Write your name and NetID on every page</textarea></div>
     R.status = 'running'; R.totalMs = ms; R.endAt = now + ms; markFired(ms);
     sndStart(); wake(true); showBanner('Exam has started', 6000); save(); render();
   }
+  // ---- after-exam timers ----
+  const postOf = () => R.status === 'over' ? R.post : null;
+  const postLive = () => { const P = postOf(); return !!P && P.status !== 'over'; };
+  function postRem(now) { const P = R.post; return P.status === 'paused' ? P.remainingMs : P.endAt - now; }
+  const nextIndex = () => postLive() ? -1 : R.post ? R.post.i + 1 : 0;
+  // lead: text to put before the banner when this timer starts on its own (the sound has already played)
+  function startPost(spec, lead) {
+    ensureAudio();
+    const now = Date.now(), ms = Math.round(spec.min * 60000);
+    R.post = { i: spec.i, custom: !!spec.custom, name: spec.name, totalMs: ms, endAt: now + ms, remainingMs: 0, status: 'running' };
+    if (!lead) sndStart();
+    wake(true);
+    showBanner((lead || '') + spec.name + ': ' + fmtMins(spec.min), lead ? 0 : 8000);
+    save(); render();
+  }
+  function startPhase(i, lead) { const a = afterList()[i]; if (!a) return false; startPost({ i, name: a.name, min: a.min }, lead); return true; }
+
   function togglePause() {
     ensureAudio();
     const now = Date.now();
     if (R.status === 'ready') return start();
+    if (R.status === 'over') { // after the exam, Space drives the after-exam timers
+      const P = R.post;
+      if (P && P.status === 'running') { P.remainingMs = P.endAt - now; P.status = 'paused'; wake(false); showBanner('Timer paused'); }
+      else if (P && P.status === 'paused') { P.endAt = now + P.remainingMs; P.status = 'running'; wake(true); $('banner').hidden = true; }
+      else { startPhase(nextIndex()); return; }
+      save(); render(); return;
+    }
     if (R.status === 'running') { R.remainingMs = R.endAt - now; R.status = 'paused'; wake(false); showBanner('Clock paused'); }
     else if (R.status === 'paused') { R.endAt = now + R.remainingMs; R.status = 'running'; wake(true); $('banner').hidden = true; }
     save(); render();
@@ -411,6 +492,18 @@ Write your name and NetID on every page</textarea></div>
       if (S.mode === 'duration') { S.dur = Math.max(1, S.dur + min); $('durIn').value = S.dur; save(); render(); }
       return;
     }
+    const P = postOf();
+    if (P && (P.status !== 'over' || min > 0)) { // adjust the after-exam timer, not the exam
+      if (P.status === 'paused') P.remainingMs = Math.max(0, P.remainingMs + d);
+      else {
+        if (P.status === 'over') { P.endAt = now; P.status = 'running'; wake(true); }
+        P.endAt += d;
+      }
+      P.totalMs = Math.max(60000, P.totalMs + d);
+      if (min > 0) showBanner(min + ' minute' + (min > 1 ? 's' : '') + ' added', 5000);
+      save(); render(); return;
+    }
+    if (R.status === 'over' && min < 0) return;
     if (R.status === 'paused') { R.remainingMs = Math.max(0, R.remainingMs + d); }
     else {
       if (R.status === 'over' && min > 0) { R.endAt = now; R.status = 'running'; wake(true); }
@@ -422,7 +515,7 @@ Write your name and NetID on every page</textarea></div>
     save(); render();
   }
   function reset() {
-    R = { status: 'ready', endAt: 0, totalMs: 0, remainingMs: 0, fired: {}, corr: [] };
+    R = { status: 'ready', endAt: 0, totalMs: 0, remainingMs: 0, fired: {}, corr: [], post: null };
     wake(false); $('banner').hidden = true; save(); render(); renderCorr();
   }
 
@@ -435,12 +528,27 @@ Write your name and NetID on every page</textarea></div>
     if (w.length > 1 && rem <= w[w.length - 2] * 60000) return 'caution';
     return 'running';
   }
+  function postLevel(rem) {
+    const P = R.post;
+    if (P.status === 'paused') return 'paused';
+    if (P.status === 'over') return 'over';
+    if (P.totalMs > 60000 && rem <= 30000) return 'caution';
+    return 'running';
+  }
 
   function tick() {
     const now = Date.now();
+    if (R.status === 'over' && R.post && R.post.status === 'running' && R.post.endAt <= now) {
+      const P = R.post; P.status = 'over'; sndWarn();
+      if (!(S.autoAfter && startPhase(P.i + 1, P.name + ' is over. '))) { showBanner(P.name + ' is over'); wake(false); save(); }
+    }
     if (R.status === 'running') {
       const rem = R.endAt - now;
-      if (rem <= 0) { R.status = 'over'; sndOver(); showBanner('Time is up. Pens down.'); wake(false); save(); }
+      if (rem <= 0) {
+        R.status = 'over'; sndOver();
+        if (!(S.autoAfter && !R.post && startPhase(0, 'Time is up. '))) { showBanner('Time is up. Pens down.'); wake(false); }
+        save();
+      }
       else {
         for (const w of warnList()) {
           if (!R.fired[w] && rem <= w * 60000) {
@@ -454,18 +562,21 @@ Write your name and NetID on every page</textarea></div>
   }
 
   function render(now = Date.now()) {
-    const rem = remaining(now);
-    const lv = level(rem);
+    const P = postOf(); // an after-exam timer takes over the stage once one has started
+    const st = P ? P.status : R.status;
+    const rem = P ? postRem(now) : remaining(now);
+    const lv = P ? postLevel(rem) : level(rem);
     $('stage').dataset.level = lv;
     $('titleOut').textContent = S.title || 'Exam';
 
     const pills = { ready: 'Not started', running: 'In progress', caution: 'In progress', final: 'Final minutes', paused: 'Paused', over: "Time's up" };
-    $('pill').textContent = pills[lv];
-    $('cdLabel').textContent = R.status === 'ready' ? 'Exam length' : R.status === 'over' ? '' : 'Time remaining';
-    $('cdLabel').hidden = R.status === 'over';
+    $('pill').textContent = P ? (st === 'paused' ? 'Paused' : 'Exam over') : pills[lv];
+    $('cdLabel').textContent = P ? P.name : R.status === 'ready' ? 'Exam length' : R.status === 'over' ? '' : 'Time remaining';
+    $('cdLabel').hidden = !P && R.status === 'over';
+    $('cdLabel').classList.toggle('phase', !!P);
 
-    if (R.status === 'over') {
-      $('countdown').textContent = 'Pens down';
+    if (st === 'over') {
+      $('countdown').textContent = P ? "Time's up" : 'Pens down';
       $('overtime').hidden = false; $('overtime').textContent = 'Over by ' + fmtDur(-rem + 999, true);
     } else {
       $('overtime').hidden = true;
@@ -474,18 +585,18 @@ Write your name and NetID on every page</textarea></div>
       $('countdown').innerHTML = withSec || rem >= 3600000 ? txt : txt + '<span class="unit">min</span>';
     }
 
-    const total = R.status === 'ready' ? Math.max(0, rem) : R.totalMs;
+    const total = P ? P.totalMs : R.status === 'ready' ? Math.max(0, rem) : R.totalMs;
     const elapsed = R.status === 'ready' ? 0 : Math.max(0, total - Math.max(0, rem));
-    const remFrac = R.status === 'over' ? 0 : total ? Math.max(0, Math.min(1, Math.max(0, rem) / total)) : 1;
+    const remFrac = st === 'over' ? 0 : total ? Math.max(0, Math.min(1, Math.max(0, rem) / total)) : 1;
     $('barFill').style.width = (remFrac * 100).toFixed(2) + '%';
-    const markKey = total + '|' + S.warn;
+    const markKey = P ? 'post' : total + '|' + S.warn;
     if (markKey !== render.markKey) {
       render.markKey = markKey;
-      $('marks').innerHTML = total ? warnList().filter(w => w * 60000 < total).map(w =>
+      $('marks').innerHTML = total && !P ? warnList().filter(w => w * 60000 < total).map(w =>
         '<div class="mark" data-w="' + w + '" style="left:' + (w * 60000 / total * 100).toFixed(3) + '%"><span>' + w + 'm</span></div>').join('') : '';
     }
     for (const m of $('marks').children) m.classList.toggle('passed', R.status !== 'ready' && rem <= m.dataset.w * 60000);
-    const leftPct = R.status === 'over' ? 0 : total ? Math.max(0, Math.min(100, Math.ceil(Math.max(0, rem) / total * 100))) : 100;
+    const leftPct = st === 'over' ? 0 : total ? Math.max(0, Math.min(100, Math.ceil(Math.max(0, rem) / total * 100))) : 100;
     const lab = $('pctOut'), bw = lab.parentElement.clientWidth, fpx = bw * remFrac;
     lab.textContent = leftPct + '% left';
     const inside = lab.offsetWidth + 28 <= fpx;
@@ -494,21 +605,43 @@ Write your name and NetID on every page</textarea></div>
     else { lab.style.right = 'auto'; lab.style.left = Math.round(fpx + 12) + 'px'; }
 
     $('nowOut').innerHTML = fmtClock(new Date(now), false);
-    $('endsLabel').textContent = R.status === 'ready' ? 'Would end at' : R.status === 'paused' ? 'Ends (if resumed now)' : 'Ends at';
-    $('endsOut').innerHTML = fmtClock(new Date(now + Math.max(0, rem)), false);
-    if (R.status === 'over') $('endsOut').innerHTML = fmtClock(new Date(R.endAt), false);
-    $('elapsedOut').textContent = fmtDur(elapsed, false) + (S.sec ? '' : '');
-    $('elapsedOut').textContent = (() => { const m = Math.floor(elapsed / 60000); return m >= 60 ? Math.floor(m / 60) + ':' + pad(m % 60) : m + ' min'; })();
+    $('endsLabel').textContent = st === 'ready' ? 'Would end at' : st === 'paused' ? 'Ends (if resumed now)' : st === 'over' ? 'Ended at' : 'Ends at';
+    $('endsOut').innerHTML = fmtClock(new Date(st === 'over' ? (P ? P.endAt : R.endAt) : now + Math.max(0, rem)), false);
+    $('elapsedLabel').textContent = P ? 'Exam ended' : 'Elapsed';
+    $('elapsedOut').innerHTML = P ? fmtClock(new Date(R.endAt), false) : (() => { const m = Math.floor(elapsed / 60000); return m >= 60 ? Math.floor(m / 60) + ':' + pad(m % 60) : m + '<small>min</small>'; })();
 
+    const live = postLive();
     const sb = $('startBtn');
-    sb.textContent = R.status === 'ready' ? 'Start exam' : R.status === 'running' ? 'Pause' : R.status === 'paused' ? 'Resume' : 'Finished';
-    sb.disabled = R.status === 'over';
-    sb.classList.toggle('paused', R.status === 'paused');
-    $('minusBtn').disabled = R.status === 'over' || (R.status === 'ready' && S.mode === 'end');
+    sb.hidden = R.status === 'over' && !live; // once the exam is over, the after-exam buttons take over
+    sb.textContent = st === 'ready' ? 'Start exam' : st === 'running' ? 'Pause' : st === 'paused' ? 'Resume' : 'Finished';
+    sb.disabled = st === 'over';
+    sb.classList.toggle('paused', st === 'paused');
+    $('minusBtn').disabled = (R.status === 'over' && !live) || (R.status === 'ready' && S.mode === 'end');
     $('plusBtn').disabled = $('plus5Btn').disabled = (R.status === 'ready' && S.mode === 'end');
     const locked = R.status !== 'ready';
     ['modeDur', 'modeEnd', 'durIn', 'endIn'].forEach(id => $(id).disabled = locked);
-    document.title = R.status === 'running' ? fmtDur(rem, true) + ' left · Exam Room Clock' : 'Exam Room Clock';
+    document.title = R.status === 'running' ? fmtDur(rem, true) + ' left · Exam Room Clock'
+      : live && st === 'running' ? fmtDur(rem, true) + ' · ' + P.name + ' · Exam Room Clock' : 'Exam Room Clock';
+    renderAfter();
+  }
+
+  function renderAfter() {
+    const box = $('after');
+    box.hidden = R.status !== 'over';
+    if (box.hidden) return;
+    const list = afterList(), P = R.post, next = nextIndex();
+    const key = JSON.stringify(list) + '|' + next + '|' + (P ? (P.custom ? 'c' : P.i) + P.status : '');
+    if (key === renderAfter.key) return; // rebuild only on change, so hover and focus survive the 200 ms tick
+    renderAfter.key = key;
+    const wrap = $('afterBtns'); wrap.innerHTML = '';
+    list.forEach((a, i) => {
+      const b = document.createElement('button'); b.type = 'button';
+      b.textContent = a.name + ' · ' + fmtMins(a.min);
+      b.classList.toggle('next', i === next);
+      b.classList.toggle('current', !!P && !P.custom && P.i === i && P.status !== 'over');
+      b.onclick = () => startPhase(i);
+      wrap.appendChild(b);
+    });
   }
 
   function renderNotes() {
@@ -584,6 +717,7 @@ Write your name and NetID on every page</textarea></div>
     S.warn = $('warnIn').value;
     S.notes = $('notesIn').value;
     S.sec = $('secIn').checked; S.h24 = $('h24In').checked;
+    S.after = $('afterIn').value; S.autoAfter = $('autoAfterIn').checked;
     $('durField').hidden = S.mode !== 'duration'; $('endField').hidden = S.mode !== 'end';
     if (R.status === 'running') markFiredKeep();
     $('err').hidden = true;
@@ -593,8 +727,16 @@ Write your name and NetID on every page</textarea></div>
     const rem = R.endAt - Date.now(), f = {};
     warnList().forEach(w => { if (rem <= w * 60000) f[w] = true; }); R.fired = f;
   }
-  ['titleIn', 'durIn', 'endIn', 'warnIn', 'notesIn'].forEach(id => $(id).addEventListener('input', readInputs));
-  ['modeDur', 'modeEnd', 'secIn', 'h24In'].forEach(id => $(id).addEventListener('change', readInputs));
+  ['titleIn', 'durIn', 'endIn', 'warnIn', 'notesIn', 'afterIn'].forEach(id => $(id).addEventListener('input', readInputs));
+  ['modeDur', 'modeEnd', 'secIn', 'h24In', 'autoAfterIn'].forEach(id => $(id).addEventListener('change', readInputs));
+  $('customForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const m = parseFloat($('customMin').value);
+    if (!(m > 0)) { $('customMin').focus(); return; }
+    // a one-off timer keeps the place in the list, so the next planned timer is still offered afterwards
+    startPost({ i: R.post ? R.post.i : -1, custom: true, name: 'Timer', min: Math.min(180, m) });
+    $('customMin').blur();
+  });
 
   $('startBtn').onclick = togglePause;
   $('plusBtn').onclick = () => adjust(1);
@@ -628,9 +770,10 @@ Write your name and NetID on every page</textarea></div>
   // ---- init ----
   $('titleIn').value = S.title; $('durIn').value = S.dur; $('endIn').value = S.end;
   $('warnIn').value = S.warn; $('notesIn').value = S.notes; $('secIn').checked = S.sec; $('h24In').checked = S.h24;
+  $('afterIn').value = S.after; $('autoAfterIn').checked = S.autoAfter;
   $('modeEnd').checked = S.mode === 'end'; $('modeDur').checked = S.mode !== 'end';
   $('durField').hidden = S.mode !== 'duration'; $('endField').hidden = S.mode !== 'end';
-  if (R.status === 'running' || R.status === 'over') wake(R.status === 'running');
+  if (R.status === 'running' || postLive()) wake(true);
   renderNotes(); syncHdr(); render(); renderCorr();
   setInterval(tick, 200);
 })();

@@ -7,36 +7,49 @@
 <title>Distribution Inspector</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=Barlow:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&family=JetBrains+Mono:wght@400..700&display=swap">
 <style>
-/* Page shell (header + theme) matches the other ClassTools pages. The tool itself is styled inline in the React code below, from the PALETTES object. */
+/* Page shell (header + theme) matches the other ClassTools pages. The tool itself is styled inline in the React code below, from the PALETTES object.
+   Design language follows Pulse: warm neutrals, near-black ink, the signal colour for the bars and the one primary action. */
 :root {
-  --bg: #eff1f5; --surface: #ffffff; --fg: #141a2a; --muted: #5d6680; --line: #d4d9e4; --accent: #4f46e5;
-  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
-  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --font-ui: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --canvas: #faf8f4; --surface: #ffffff; --surface-2: #f3f0ea;
+  --ink: #1b1814; --ink-2: #4a453d; --muted: #847d72;
+  --hairline: #e8e3da; --hairline-strong: #d8d2c6;
+  --signal: #ee4d2e;
+  --radius-sm: 9px;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048; --accent: #818cf8; color-scheme: dark;
+    --canvas: #15120f; --surface: #1f1b16; --surface-2: #272019;
+    --ink: #f5f1ea; --ink-2: #d9d2c6; --muted: #968d7f;
+    --hairline: rgba(255,255,255,.09); --hairline-strong: rgba(255,255,255,.16);
+    --signal: #ff5a36; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0e1220; --surface: #161b2c; --fg: #e5e9f3; --muted: #939bb4; --line: #283048; --accent: #818cf8; color-scheme: dark;
+  --canvas: #15120f; --surface: #1f1b16; --surface-2: #272019;
+  --ink: #f5f1ea; --ink-2: #d9d2c6; --muted: #968d7f;
+  --hairline: rgba(255,255,255,.09); --hairline-strong: rgba(255,255,255,.16);
+  --signal: #ff5a36; color-scheme: dark;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+::selection { background: var(--signal); color: #fff; }
 body {
-  background: var(--bg); color: var(--fg); font-family: "DM Sans", system-ui, sans-serif;
+  background: var(--canvas); color: var(--ink); font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: 12px 28px;
 }
 .app { max-width: 1150px; margin: 0 auto; }
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-.brand { font-family: var(--display); font-weight: 600; font-size: 1.1rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.hdr-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-header button { font: 500 15px var(--body); cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--fg); padding: 9px 14px; }
-header button:hover { border-color: var(--muted); }
-button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.brand { font-weight: 800; font-size: 1.1rem; letter-spacing: -.02em; color: var(--ink); }
+.hdr-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+header button { font: 500 .875rem var(--font-ui); cursor: pointer; border-radius: var(--radius-sm); border: 1px solid var(--hairline); background: transparent; color: var(--muted); padding: 7px 12px; transition: background-color .15s, color .15s; }
+header button:hover { background: var(--surface-2); color: var(--ink); }
+button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 .colbtn:focus-visible { outline-offset: -3px; }
 #loading { padding: 60px 0; text-align: center; font-size: 13px; color: var(--muted); }
 </style>
@@ -92,22 +105,26 @@ const {
 // The page follows the shared ClassTools theme (Auto / Light / Dark), which the
 // header button stores on <html data-theme>. Colours must be 6-digit hex because
 // some code appends an alpha suffix (e.g. color + "55").
+// Pulse design language: warm neutrals, ink for selection and most text, signal for the
+// bars (as in Pulse's own grade distribution), warn for the normal fit, good for the median.
 const PALETTES = {
   dark: {
-    bg: "#0e1220", surface: "#161b2c", raised: "#1f2638", line: "#283048", lineStrong: "#3a4462",
-    fg: "#e5e9f3", strong: "#f4f6fb", soft: "#b4bbd0", muted: "#939bb4",
-    accent: "#818cf8", bar: "#6366f1", curve: "#fbbf24", mean: "#38bdf8", median: "#34d399",
-    skew: "#f472b6", range: "#94a3b8", violet: "#a78bfa",
-    green: "#34d399", amber: "#fbbf24", red: "#f87171",
-    overlay: "rgba(0, 0, 0, 0.65)", shadow: "0 4px 16px rgba(0, 0, 0, 0.45)",
+    bg: "#15120f", surface: "#1f1b16", raised: "#272019", line: "#34302b", lineStrong: "#45413c",
+    fg: "#f5f1ea", strong: "#f5f1ea", soft: "#d9d2c6", muted: "#968d7f",
+    accent: "#f5f1ea", bar: "#ff5a36", curve: "#d4962f", mean: "#d9d2c6", median: "#2fa874",
+    skew: "#968d7f", range: "#968d7f", violet: "#d9d2c6",
+    green: "#2fa874", amber: "#d4962f", red: "#ff5a36",
+    overlay: "rgba(0, 0, 0, 0.65)", shadow: "0 18px 50px -12px rgba(0, 0, 0, 0.75)",
+    card: "0 1px 2px rgba(0,0,0,.3), 0 10px 30px -10px rgba(0,0,0,.6)",
   },
   light: {
-    bg: "#eff1f5", surface: "#ffffff", raised: "#e9ecf3", line: "#d4d9e4", lineStrong: "#b9c0d0",
-    fg: "#141a2a", strong: "#0b1020", soft: "#3f4760", muted: "#5d6680",
-    accent: "#4f46e5", bar: "#6366f1", curve: "#d97706", mean: "#0369a1", median: "#047857",
-    skew: "#be185d", range: "#5d6680", violet: "#6d28d9",
-    green: "#047857", amber: "#b45309", red: "#dc2626",
-    overlay: "rgba(20, 26, 42, 0.45)", shadow: "0 4px 16px rgba(20, 26, 42, 0.15)",
+    bg: "#faf8f4", surface: "#ffffff", raised: "#f3f0ea", line: "#e8e3da", lineStrong: "#d8d2c6",
+    fg: "#1b1814", strong: "#1b1814", soft: "#4a453d", muted: "#847d72",
+    accent: "#1b1814", bar: "#ee4d2e", curve: "#b9791b", mean: "#4a453d", median: "#1f8a5b",
+    skew: "#847d72", range: "#847d72", violet: "#4a453d",
+    green: "#1f8a5b", amber: "#b9791b", red: "#ee4d2e",
+    overlay: "rgba(27, 24, 20, 0.45)", shadow: "0 18px 50px -12px rgba(27, 24, 20, 0.45)",
+    card: "0 1px 2px rgba(27,24,20,.04), 0 6px 20px -8px rgba(27,24,20,.10)",
   },
 };
 
@@ -438,7 +455,7 @@ async function exportPNG({ titleText, sizeId, statKeys, stats, analysis, bins, b
   ctx.fillRect(0, 0, W, H);
 
   ctx.fillStyle = et.strong;
-  ctx.font = `bold ${titleSize}px system-ui, -apple-system, sans-serif`;
+  ctx.font = `800 ${titleSize}px 'Hanken Grotesk', system-ui, sans-serif`;
   ctx.textBaseline = "top";
   ctx.textAlign = "left";
   ctx.fillText(titleText || "Distribution", pad, Math.round(pad * 0.6));
@@ -476,9 +493,9 @@ async function exportPNG({ titleText, sizeId, statKeys, stats, analysis, bins, b
 
     ctx.textBaseline = "alphabetic";
     for (const { label, value, color } of legendItems) {
-      ctx.font = `bold ${lFontVal}px 'DM Mono', monospace`;
+      ctx.font = `bold ${lFontVal}px 'JetBrains Mono', monospace`;
       const vW = ctx.measureText(value).width;
-      ctx.font = `${lFontLbl}px system-ui`;
+      ctx.font = `${lFontLbl}px 'Hanken Grotesk', system-ui`;
       const lW = ctx.measureText(label.toUpperCase()).width;
       const pw = Math.max(vW, lW) + 2 * pillPadX;
       if (cx + pw > W - pad) break;
@@ -492,11 +509,11 @@ async function exportPNG({ titleText, sizeId, statKeys, stats, analysis, bins, b
 
       ctx.textAlign = "center";
       ctx.fillStyle = et.muted;
-      ctx.font = `${lFontLbl}px system-ui`;
+      ctx.font = `${lFontLbl}px 'Hanken Grotesk', system-ui`;
       ctx.fillText(label.toUpperCase(), cx + pw / 2, legendY + lFontLbl + Math.round(pillH * 0.12));
 
       ctx.fillStyle = color;
-      ctx.font = `bold ${lFontVal}px 'DM Mono', monospace`;
+      ctx.font = `bold ${lFontVal}px 'JetBrains Mono', monospace`;
       ctx.fillText(value, cx + pw / 2, legendY + pillH - Math.round(pillH * 0.15));
 
       cx += pw + gap;
@@ -551,7 +568,7 @@ function ExportModal({ open, onClose, onExport, bins, stats, analysis, binSize, 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: C.strong }}>Export PNG</span>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ display: "flex", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 6, overflow: "hidden" }}>
+            <div style={{ display: "flex", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 9, overflow: "hidden" }}>
               {[["Dark", "dark"], ["Light", "light"]].map(([label, val]) => (
                 <button key={label} onClick={() => setExportChoice(val)} style={{
                   background: exportTheme === val ? C.raised : "transparent",
@@ -575,7 +592,7 @@ function ExportModal({ open, onClose, onExport, bins, stats, analysis, binSize, 
                 <div key={s.id} onClick={() => setSizeId(s.id)} style={{
                   background: active ? C.raised : C.bg,
                   border: `1.5px solid ${active ? C.bar : C.line}`,
-                  borderRadius: 8, padding: "10px 10px 8px", cursor: "pointer",
+                  borderRadius: 9, padding: "10px 10px 8px", cursor: "pointer",
                   display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
                   transition: "border-color 0.15s",
                 }}>
@@ -587,7 +604,7 @@ function ExportModal({ open, onClose, onExport, bins, stats, analysis, binSize, 
                     )}
                   </div>
                   <div style={{ fontSize: 10, fontWeight: 600, color: active ? C.fg : C.muted, textAlign: "center", lineHeight: 1.3 }}>{s.label}</div>
-                  <div style={{ fontSize: 9, color: C.muted, fontFamily: "'DM Mono', monospace" }}>{s.w}×{s.h}</div>
+                  <div style={{ fontSize: 9, color: C.muted, fontFamily: "'JetBrains Mono', monospace" }}>{s.w}×{s.h}</div>
                 </div>
               );
             })}
@@ -613,7 +630,7 @@ function ExportModal({ open, onClose, onExport, bins, stats, analysis, binSize, 
                 <div key={opt.key} onClick={() => toggleStat(opt.key)} style={{
                   background: active ? C.raised : C.bg,
                   border: `1px solid ${active ? color + "55" : C.line}`,
-                  borderRadius: 6, padding: "5px 12px", cursor: "pointer",
+                  borderRadius: 9, padding: "5px 12px", cursor: "pointer",
                   display: "flex", alignItems: "center", gap: 6, transition: "all 0.12s",
                 }}>
                   <div style={{ width: 7, height: 7, borderRadius: 2, background: active ? color : C.lineStrong, flexShrink: 0, transition: "background 0.12s" }} />
@@ -627,7 +644,7 @@ function ExportModal({ open, onClose, onExport, bins, stats, analysis, binSize, 
         {/* Export button */}
         <button
           onClick={() => onExport({ sizeId, statKeys, themeName: exportTheme })}
-          style={{ width: "100%", background: "linear-gradient(135deg, #6366f1 0%, #818cf8 100%)", border: "none", borderRadius: 8, color: "white", fontFamily: "inherit", fontWeight: 600, fontSize: 14, padding: "13px", cursor: "pointer" }}
+          style={{ width: "100%", background: C.bar, border: "none", borderRadius: 9, color: "#fff", fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "13px", cursor: "pointer" }}
         >
           ↓ Export PNG
         </button>
@@ -649,7 +666,7 @@ function StatPill({ label, value, color, tip, small, C }) {
         <div style={{
           position: "absolute", bottom: "calc(100% + 7px)", left: "50%",
           transform: "translateX(-50%)", background: C.raised,
-          border: `1px solid ${C.lineStrong}`, borderRadius: 6, padding: "7px 11px",
+          border: `1px solid ${C.lineStrong}`, borderRadius: 9, padding: "7px 11px",
           fontSize: 11, color: C.soft, zIndex: 20, pointerEvents: "none",
           width: 190, textAlign: "center", lineHeight: 1.55,
           boxShadow: C.shadow,
@@ -662,9 +679,9 @@ function StatPill({ label, value, color, tip, small, C }) {
           }} />
         </div>
       )}
-      <div style={{ background: C.surface, border: `1px solid ${color}55`, borderRadius: 6, padding: "5px 13px", display: "flex", flexDirection: "column", alignItems: "center", cursor: "default" }}>
+      <div style={{ background: C.surface, border: `1px solid ${color}55`, borderRadius: 9, padding: "5px 13px", display: "flex", flexDirection: "column", alignItems: "center", cursor: "default" }}>
         <span style={{ fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</span>
-        <span style={{ fontSize: small ? 12 : 14, fontWeight: 700, color, fontFamily: "'DM Mono', monospace" }}>{value}</span>
+        <span style={{ fontSize: small ? 12 : 14, fontWeight: 700, color, fontFamily: "'JetBrains Mono', monospace" }}>{value}</span>
       </div>
     </div>
   );
@@ -699,7 +716,7 @@ function MeanCustomLine({ xAxisMap, offset, mean, binSize, dataMin, stroke, labe
           <rect x={px} y={py} width={pw} height={ph} rx={5} ry={5}
             fill={pillBg} stroke={stroke} strokeWidth={1.2} />
           <text x={xPixel} y={py + ph / 2 + 4.5} textAnchor="middle"
-            fill={stroke} fontSize={12} fontWeight={700} fontFamily="'DM Mono', monospace">
+            fill={stroke} fontSize={12} fontWeight={700} fontFamily="'JetBrains Mono', monospace">
             {label}
           </text>
         </g>
@@ -856,7 +873,7 @@ function CutoffStrip({ scores, row, onPick, C }) {
       {ticks.map(t => (
         <g key={t}>
           <line x1={x(t)} x2={x(t)} y1={axisY} y2={axisY + 3} stroke={C.lineStrong} />
-          <text x={x(t)} y={axisY + 13} fontSize={10} fill={C.muted} textAnchor="middle" fontFamily="'DM Mono', monospace">{fmtNum(t)}</text>
+          <text x={x(t)} y={axisY + 13} fontSize={10} fill={C.muted} textAnchor="middle" fontFamily="'JetBrains Mono', monospace">{fmtNum(t)}</text>
         </g>
       ))}
       <line x1={x(row.nominal)} x2={x(row.nominal)} y1={4} y2={axisY} stroke={C.muted} strokeDasharray="3 3" />
@@ -891,7 +908,7 @@ function NumberField({ value, onCommit, C, label, width = 76, allowEmpty = false
       onChange={e => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setDraft(null); }}
-      style={{ width, background: C.surface, border: `1px solid ${C.lineStrong}`, borderRadius: 6, color: C.fg, fontFamily: "'DM Mono', monospace", fontSize: 13, padding: "6px 8px" }}
+      style={{ width, background: C.surface, border: `1px solid ${C.lineStrong}`, borderRadius: 9, color: C.fg, fontFamily: "'JetBrains Mono', monospace", fontSize: 13, padding: "6px 8px" }}
     />
   );
 }
@@ -914,12 +931,12 @@ function GradeCutoffs({ scores, rows, scaleKey, onScale, windowPct, onWindow, ou
     navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => {});
   };
 
-  const btn = { background: C.raised, border: `1px solid ${C.lineStrong}`, color: C.soft, fontFamily: "inherit", fontSize: 12, borderRadius: 6, padding: "6px 12px", cursor: "pointer" };
+  const btn = { background: C.raised, border: `1px solid ${C.lineStrong}`, color: C.soft, fontFamily: "inherit", fontSize: 12, borderRadius: 9, padding: "6px 12px", cursor: "pointer" };
   const label = { fontSize: 11, color: C.muted };
-  const selectStyle = { background: C.surface, border: `1px solid ${C.lineStrong}`, borderRadius: 6, color: C.fg, fontFamily: "inherit", fontSize: 12, padding: "6px 8px" };
+  const selectStyle = { background: C.surface, border: `1px solid ${C.lineStrong}`, borderRadius: 9, color: C.fg, fontFamily: "inherit", fontSize: 12, padding: "6px 8px" };
 
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, marginTop: 16 }}>
+    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, marginTop: 16, boxShadow: C.card }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", padding: "16px 18px 12px" }}>
         <div style={{ maxWidth: 620 }}>
@@ -961,9 +978,9 @@ function GradeCutoffs({ scores, rows, scaleKey, onScale, windowPct, onWindow, ou
       {/* Grade counts */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "0 18px 14px" }}>
         {Object.entries(counts).map(([letter, n]) => (
-          <div key={letter} style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 6, padding: "4px 10px", display: "flex", gap: 8, alignItems: "baseline" }}>
+          <div key={letter} style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 9, padding: "4px 10px", display: "flex", gap: 8, alignItems: "baseline" }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: C.fg }}>{letter}</span>
-            <span style={{ fontSize: 12, fontFamily: "'DM Mono', monospace", color: C.accent }}>{n}</span>
+            <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: C.accent }}>{n}</span>
             <span style={{ fontSize: 10, color: C.muted }}>{total ? Math.round(n / total * 100) : 0}%</span>
           </div>
         ))}
@@ -981,7 +998,7 @@ function GradeCutoffs({ scores, rows, scaleKey, onScale, windowPct, onWindow, ou
         return (
           <div key={row.letter} style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", padding: "12px 18px", borderTop: `1px solid ${C.line}` }}>
             <div style={{ flex: "0 0 52px" }}>
-              <div style={{ fontFamily: "var(--display)", fontSize: 26, fontWeight: 600, lineHeight: 1, color: C.accent }}>{row.letter}</div>
+              <div style={{ fontFamily: "var(--font-ui)", fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1, color: C.accent }}>{row.letter}</div>
               <div style={{ fontSize: 10, color: C.muted, marginTop: 3 }}>usually {fmtNum(row.nominal)}</div>
             </div>
             <div style={{ flex: "1 1 280px", maxWidth: 380 }}>
@@ -1003,7 +1020,7 @@ function GradeCutoffs({ scores, rows, scaleKey, onScale, windowPct, onWindow, ou
               <div style={{ fontSize: 11, color: C.soft, lineHeight: 1.5 }}>
                 {nearest === null
                   ? "No scores below this cutoff."
-                  : <>Nearest score below: <b style={{ fontFamily: "'DM Mono', monospace" }}>{fmtNum(row.prev)}</b> ({fmtNum(nearest)} under)</>}
+                  : <>Nearest score below: <b style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fmtNum(row.prev)}</b> ({fmtNum(nearest)} under)</>}
                 {" · "}
                 {row.moved > 0 ? `${row.moved} more student${row.moved === 1 ? "" : "s"} than the usual cutoff`
                   : row.moved < 0 ? `${-row.moved} fewer student${row.moved === -1 ? "" : "s"} than the usual cutoff`
@@ -1014,7 +1031,7 @@ function GradeCutoffs({ scores, rows, scaleKey, onScale, windowPct, onWindow, ou
                   <span style={{ fontSize: 10, color: C.muted }}>Other gaps:</span>
                   {others.map(o => (
                     <button key={o.cutoff} onClick={() => onOverride(row.letter, o.cutoff)} title={`Cutoff ${fmtNum(o.cutoff)}: ${fmtNum(o.gap)}-point gap below`}
-                      style={{ ...btn, padding: "2px 8px", fontSize: 11, fontFamily: "'DM Mono', monospace" }}>
+                      style={{ ...btn, padding: "2px 8px", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}>
                       {fmtNum(o.cutoff)} <span style={{ color: C.muted }}>({fmtNum(o.gap)} gap)</span>
                     </button>
                   ))}
@@ -1033,7 +1050,7 @@ function ChartTooltip({ active, payload, n, C }) {
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload;
   return (
-    <div style={{ background: C.raised, border: `1px solid ${C.lineStrong}`, borderRadius: 6, padding: "8px 14px", fontSize: 12, color: C.fg, boxShadow: C.shadow }}>
+    <div style={{ background: C.raised, border: `1px solid ${C.lineStrong}`, borderRadius: 9, padding: "8px 14px", fontSize: 12, color: C.fg, boxShadow: C.shadow }}>
       <div style={{ fontWeight: 700, marginBottom: 2 }}>{d.range}</div>
       <div style={{ color: C.violet }}>{d.count} values ({n ? (d.count / n * 100).toFixed(1) : 0}%)</div>
     </div>
@@ -1066,7 +1083,7 @@ function ColumnPicker({ csvData, selectedCol, onPick, onCancel, C }) {
   const hover = i => () => setHoverCol(columns[i].usable ? i : null);
 
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, marginBottom: 16, overflow: "hidden" }}>
+    <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, marginBottom: 16, overflow: "hidden", boxShadow: C.card }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "14px 18px 12px" }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.strong }}>Choose the column to plot</div>
@@ -1077,7 +1094,7 @@ function ColumnPicker({ csvData, selectedCol, onPick, onCancel, C }) {
           </div>
         </div>
         {onCancel && (
-          <button onClick={onCancel} style={{ background: C.raised, border: `1px solid ${C.lineStrong}`, color: C.soft, fontFamily: "inherit", fontSize: 12, borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>
+          <button onClick={onCancel} style={{ background: C.raised, border: `1px solid ${C.lineStrong}`, color: C.soft, fontFamily: "inherit", fontSize: 12, borderRadius: 9, padding: "6px 12px", cursor: "pointer" }}>
             Cancel
           </button>
         )}
@@ -1134,7 +1151,7 @@ function ColumnPicker({ csvData, selectedCol, onPick, onCancel, C }) {
                         background: colBg(i, "transparent"),
                         color: !col.usable ? C.muted : isNum ? C.fg : C.muted,
                         opacity: col.usable ? 1 : 0.6,
-                        fontFamily: "'DM Mono', monospace", whiteSpace: "nowrap",
+                        fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap",
                         maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis",
                         cursor: col.usable ? "pointer" : "default",
                       }}
@@ -1275,7 +1292,7 @@ function HistogramTool() {
     : null;
 
   const sectionLabel = { fontSize: 9, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 5 };
-  const card = { background: C.surface, border: `1px solid ${C.line}` };
+  const card = { background: C.surface, border: `1px solid ${C.line}`, boxShadow: C.card };
   const smallButton = { background: C.raised, border: `1px solid ${C.lineStrong}`, color: C.soft, fontFamily: "inherit", cursor: "pointer" };
   const divider = <div style={{ width: 1, height: 20, background: C.line }} />;
 
@@ -1309,7 +1326,7 @@ function HistogramTool() {
         /* Loaded file: one slim bar */
         <div style={{
           ...card, border: `1px ${dragging ? "dashed" : "solid"} ${dragging ? C.bar : C.line}`,
-          borderRadius: 8, padding: "10px 14px", marginBottom: 12,
+          borderRadius: 14, padding: "10px 14px", marginBottom: 12,
           display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
         }}>
           <span style={{ fontSize: 16 }} aria-hidden="true">📄</span>
@@ -1323,11 +1340,11 @@ function HistogramTool() {
             </div>
           </div>
           {selectedCol !== "" && !pickerOpen && (
-            <button onClick={() => setPickerOpen(true)} style={{ ...smallButton, color: C.fg, borderRadius: 6, fontSize: 12, padding: "7px 14px" }}>
+            <button onClick={() => setPickerOpen(true)} style={{ ...smallButton, color: C.fg, borderRadius: 9, fontSize: 12, padding: "7px 14px" }}>
               Change column
             </button>
           )}
-          <button onClick={() => fileInputRef.current?.click()} style={{ ...smallButton, borderRadius: 6, fontSize: 12, padding: "7px 14px" }}>
+          <button onClick={() => fileInputRef.current?.click()} style={{ ...smallButton, borderRadius: 9, fontSize: 12, padding: "7px 14px" }}>
             Replace file
           </button>
         </div>
@@ -1341,7 +1358,7 @@ function HistogramTool() {
           style={{
             background: dragging ? C.accent + "12" : C.surface,
             border: `2px dashed ${dragging ? C.bar : C.lineStrong}`,
-            borderRadius: 10, padding: "36px 20px", marginBottom: 12,
+            borderRadius: 14, padding: "36px 20px", marginBottom: 12,
             display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
             cursor: "pointer", transition: "border-color 0.15s, background 0.15s", textAlign: "center",
           }}
@@ -1390,7 +1407,7 @@ function HistogramTool() {
       {scores && displayStats && (
         <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
           {/* Chart */}
-          <div ref={chartRef} style={{ ...card, flex: "1 1 400px", borderRadius: 10, padding: "16px 8px 8px", minWidth: 0 }}>
+          <div ref={chartRef} style={{ ...card, flex: "1 1 400px", borderRadius: 14, padding: "16px 8px 8px", minWidth: 0 }}>
             <ResponsiveContainer width="100%" height={280}>
               <ComposedChart data={bins} margin={{ top: 28, right: 16, left: 0, bottom: 22 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.line} />
@@ -1417,7 +1434,7 @@ function HistogramTool() {
 
           {/* Analysis panel */}
           {displayAnalysis && (
-            <div style={{ ...card, flex: "0 0 220px", borderRadius: 10, padding: "18px", display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ ...card, flex: "0 0 220px", borderRadius: 14, padding: "18px", display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
                 <div style={sectionLabel}>Modality</div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: modalityColor(C, displayAnalysis.modality), marginBottom: 5 }}>{displayAnalysis.modality}</div>
@@ -1438,10 +1455,10 @@ function HistogramTool() {
 
       {/* Controls bar */}
       {scores && displayStats && (
-        <div style={{ ...card, display: "flex", alignItems: "center", gap: 16, borderRadius: 8, padding: "12px 18px", flexWrap: "wrap" }}>
+        <div style={{ ...card, display: "flex", alignItems: "center", gap: 16, borderRadius: 14, padding: "12px 18px", flexWrap: "wrap" }}>
           <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>Bin width</span>
           <input type="range" min={0.5} max={maxBin} step={0.5} value={binSize} onChange={e => setBinSize(parseFloat(e.target.value))} aria-label="Bin width" style={{ flex: 1, minWidth: 80, accentColor: C.bar }} />
-          <span style={{ fontSize: 13, fontFamily: "'DM Mono', monospace", color: C.accent, minWidth: 28 }}>{binSize}</span>
+          <span style={{ fontSize: 13, fontFamily: "'JetBrains Mono', monospace", color: C.accent, minWidth: 28 }}>{binSize}</span>
           <button
             onClick={() => setBinSize(displayStats.fdBin)}
             style={{ ...smallButton, fontSize: 11, borderRadius: 4, padding: "4px 10px" }}
@@ -1457,14 +1474,14 @@ function HistogramTool() {
               background: filterOutliers ? C.violet + "1f" : C.raised,
               border: `1px solid ${filterOutliers ? C.violet + "66" : C.lineStrong}`,
               color: filterOutliers ? C.violet : C.soft,
-              borderRadius: 6, fontWeight: 500, fontSize: 12,
+              borderRadius: 9, fontWeight: 500, fontSize: 12,
               padding: "7px 14px", display: "flex", alignItems: "center", gap: 6,
               whiteSpace: "nowrap", transition: "all 0.15s",
             }}
           >
             Filter outliers
             {filterOutliers && outlierCount > 0 && (
-              <span style={{ fontSize: 10, background: C.violet + "22", borderRadius: 10, padding: "1px 6px", color: C.violet, fontFamily: "'DM Mono', monospace" }}>
+              <span style={{ fontSize: 10, background: C.violet + "22", borderRadius: 10, padding: "1px 6px", color: C.violet, fontFamily: "'JetBrains Mono', monospace" }}>
                 -{outlierCount}
               </span>
             )}
@@ -1478,7 +1495,7 @@ function HistogramTool() {
               background: gradeOpen ? C.accent + "1f" : C.raised,
               border: `1px solid ${gradeOpen ? C.accent + "66" : C.lineStrong}`,
               color: gradeOpen ? C.accent : C.soft,
-              borderRadius: 6, fontWeight: 500, fontSize: 12, padding: "7px 14px", whiteSpace: "nowrap", transition: "all 0.15s",
+              borderRadius: 9, fontWeight: 500, fontSize: 12, padding: "7px 14px", whiteSpace: "nowrap", transition: "all 0.15s",
             }}
           >
             Grade cutoffs
@@ -1486,7 +1503,7 @@ function HistogramTool() {
           {divider}
           <button
             onClick={() => setExportModalOpen(true)}
-            style={{ ...smallButton, color: C.fg, borderRadius: 6, fontWeight: 500, fontSize: 12, padding: "7px 14px", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
+            style={{ ...smallButton, color: C.fg, borderRadius: 9, fontWeight: 500, fontSize: 12, padding: "7px 14px", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
           >
             ↓ Export PNG
           </button>
