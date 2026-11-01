@@ -176,6 +176,44 @@ function parseCSV(text) {
   return { headers, rows };
 }
 
+// ── Google Sheets links ───────────────────────────────────────────────────────
+// Turns a Sheets link into CSV download URLs (tried in order). Returns null if
+// the text isn't a Sheets link. The sheet must be shared "Anyone with the link".
+function sheetsCSVUrls(link) {
+  let url;
+  try { url = new URL(link.trim()); } catch (e) { return null; }
+  if (!/(^|\.)docs\.google\.com$/.test(url.hostname)) return null;
+  const gidMatch = (url.hash + "&" + url.search).match(/[#&?]gid=(\d+)/);
+  const gid = gidMatch ? gidMatch[1] : null;
+  const gidParam = gid ? `&gid=${gid}` : "";
+  // "Publish to web" links: /spreadsheets/d/e/<id>/pubhtml
+  const pub = url.pathname.match(/\/spreadsheets\/d\/e\/([\w-]+)/);
+  if (pub) return [`https://docs.google.com/spreadsheets/d/e/${pub[1]}/pub?output=csv${gidParam}`];
+  const m = url.pathname.match(/\/spreadsheets\/d\/([\w-]+)/);
+  if (!m) return null;
+  const base = `https://docs.google.com/spreadsheets/d/${m[1]}`;
+  return [
+    `${base}/export?format=csv${gidParam}`,
+    `${base}/gviz/tq?tqx=out:csv&headers=1${gidParam}`,
+  ];
+}
+
+async function fetchSheetCSV(link) {
+  const urls = sheetsCSVUrls(link);
+  if (!urls) throw new Error("That doesn't look like a Google Sheets link.");
+  for (const u of urls) {
+    try {
+      const res = await fetch(u);
+      if (!res.ok) continue;
+      const text = await res.text();
+      // A private sheet sends back a sign-in page instead of CSV
+      if (/^\s*</.test(text)) continue;
+      return text;
+    } catch (e) { /* blocked or offline; try the next URL */ }
+  }
+  throw new Error("Couldn't open that sheet. In Google Sheets, click Share and set General access to \u201cAnyone with the link\u201d, then try again.");
+}
+
 function extractColumn(rows, colIndex) {
   return rows.map(r => parseFloat(r[colIndex])).filter(v => !isNaN(v));
 }
@@ -1780,24 +1818,45 @@ function HistogramTool() {
     setFilteredAnalysis(runLocalAnalysis(filtered, fs));
   }, [filterOutliers, scores, stats]);
 
+  const loadCSVText = useCallback((text, name) => {
+    const { headers, rows } = parseCSV(text);
+    if (headers.length === 0) { setError("Could not parse CSV — check the file format."); return false; }
+    setCsvData({ headers, rows, columns: summarizeColumns(headers, rows), fileName: name });
+    setSelectedCol("");
+    setPickerOpen(true);
+    setScores(null);
+    setStats(null);
+    setAnalysis(null);
+    setError("");
+    setTitle(name.replace(/\.csv$/i, ""));
+    return true;
+  }, []);
+
   const handleFile = useCallback((file) => {
     if (!file) return;
     if (!file.name.endsWith(".csv")) { setError("Please upload a .csv file."); return; }
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const { headers, rows } = parseCSV(e.target.result);
-      if (headers.length === 0) { setError("Could not parse CSV — check the file format."); return; }
-      setCsvData({ headers, rows, columns: summarizeColumns(headers, rows), fileName: file.name });
-      setSelectedCol("");
-      setPickerOpen(true);
-      setScores(null);
-      setStats(null);
-      setAnalysis(null);
-      setError("");
-      setTitle(file.name.replace(/\.csv$/i, ""));
-    };
+    reader.onload = (e) => loadCSVText(e.target.result, file.name);
     reader.readAsText(file);
-  }, []);
+  }, [loadCSVText]);
+
+  const [sheetLink, setSheetLink] = useState("");
+  const [sheetLoading, setSheetLoading] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const handleSheetLink = useCallback(async (e) => {
+    e?.preventDefault();
+    if (!sheetLink.trim() || sheetLoading) return;
+    setSheetLoading(true);
+    setError("");
+    try {
+      const text = await fetchSheetCSV(sheetLink);
+      if (loadCSVText(text, "Google Sheet")) { setSheetLink(""); setLinkOpen(false); }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSheetLoading(false);
+    }
+  }, [sheetLink, sheetLoading, loadCSVText]);
 
   // A CSV can be dropped anywhere on the page
   useEffect(() => {
@@ -1910,6 +1969,9 @@ function HistogramTool() {
           <button onClick={() => fileInputRef.current?.click()} style={{ ...smallButton, borderRadius: 9, fontSize: 12, padding: "7px 14px" }}>
             Replace file
           </button>
+          <button onClick={() => setLinkOpen(o => !o)} style={{ ...smallButton, borderRadius: 9, fontSize: 12, padding: "7px 14px" }}>
+            Use a Sheets link
+          </button>
         </div>
       ) : (
         /* No file yet: drop zone */
@@ -1930,6 +1992,26 @@ function HistogramTool() {
           <span style={{ fontSize: 14, fontWeight: 600, color: C.fg }}>{dragging ? "Drop to open" : "Drop a CSV here or click to browse"}</span>
           <span style={{ fontSize: 11, color: C.muted }}>One row per student, one column per score. The file stays on this computer.</span>
         </div>
+      )}
+      {(!csvData || linkOpen) && (
+        <form onSubmit={handleSheetLink} style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, color: C.muted }}>{csvData ? "Google Sheets link:" : "or paste a Google Sheets link:"}</span>
+          <input
+            type="url"
+            value={sheetLink}
+            onChange={e => setSheetLink(e.target.value)}
+            placeholder="https://docs.google.com/spreadsheets/d/…"
+            aria-label="Google Sheets link"
+            style={{ flex: "1 1 260px", minWidth: 0, fontSize: 13, padding: "7px 10px", borderRadius: 9, border: `1px solid ${C.lineStrong}`, background: C.surface, color: C.fg, fontFamily: "inherit", outline: "none" }}
+          />
+          <button type="submit" disabled={!sheetLink.trim() || sheetLoading}
+            style={{ ...smallButton, color: C.fg, borderRadius: 9, fontSize: 12, padding: "7px 14px", opacity: (!sheetLink.trim() || sheetLoading) ? 0.5 : 1 }}>
+            {sheetLoading ? "Loading…" : "Load"}
+          </button>
+          <span style={{ flexBasis: "100%", fontSize: 11, color: C.muted }}>
+            Sharing must be set to “Anyone with the link can view.” The tab in your link is the one that loads.
+          </span>
+        </form>
       )}
       {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 10 }}>{error}</div>}
 
