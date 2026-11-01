@@ -1242,9 +1242,67 @@ function snapToGap(uniq, v) {
   return niceCutoff(uniq[i - 1], uniq[i]);
 }
 
+// How close the nearest raw scores sit to a cutoff, shown while a cutoff is dragged or focused.
+// Uses raw (unrounded) scores, since "you were 1.3 points short" is the number that settles a dispute.
+const NEAR_STEPS = [0.5, 1, 1.5, 2, 2.5, 3];
+function CutoffNearBox({ raw, row, rounded, left, width, C }) {
+  const line = rounded ? row.cutoff - 0.5 : row.cutoff;
+  const below = raw.filter(v => v < line);
+  const above = raw.filter(v => v >= line);
+  const closestBelow = below.length ? below[below.length - 1] : null;
+  const lowestAbove = above.length ? above[0] : null;
+  const within = (list, d) => list.filter(v => Math.abs(v - line) <= d + 1e-9).length;
+  const mono = { fontFamily: "'JetBrains Mono', monospace" };
+  const cell = { padding: "1px 6px", textAlign: "right", ...mono };
+  return (
+    <div role="status" aria-live="polite" style={{
+      position: "absolute", left, bottom: "100%", marginBottom: 6, width, zIndex: 5, pointerEvents: "none",
+      background: C.surface, border: `1px solid ${C.lineStrong}`, borderRadius: 10, boxShadow: C.card,
+      padding: "8px 10px", fontSize: 11, color: C.fg,
+    }}>
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>
+        {row.letter} line at <span style={mono}>{fmtNum(line)}</span>
+        {rounded && <span style={{ color: C.muted, fontWeight: 400 }}> ({fmtNum(row.cutoff)} after rounding)</span>}
+      </div>
+      <div style={{ color: C.muted, marginBottom: 6, lineHeight: 1.4 }}>
+        Closest below:{" "}
+        {closestBelow === null ? "none" : (
+          <><span style={{ ...mono, color: C.fg }}>{closestBelow.toFixed(2)}</span>, <span style={{ ...mono, fontWeight: 700, color: line - closestBelow < 0.5 ? C.amber : C.fg }}>{fmtNum(line - closestBelow)}</span> short</>
+        )}
+        <br />
+        Lowest in: {lowestAbove === null ? "none" : (
+          <><span style={{ ...mono, color: C.fg }}>{lowestAbove.toFixed(2)}</span>, {fmtNum(lowestAbove - line)} over</>
+        )}
+      </div>
+      <table style={{ borderCollapse: "collapse", width: "100%" }}>
+        <thead>
+          <tr style={{ color: C.muted, fontSize: 10 }}>
+            <th style={{ ...cell, textAlign: "left", fontFamily: "inherit", fontWeight: 600 }}>within</th>
+            <th style={{ ...cell, fontFamily: "inherit", fontWeight: 600 }}>below</th>
+            <th style={{ ...cell, fontFamily: "inherit", fontWeight: 600 }}>above</th>
+          </tr>
+        </thead>
+        <tbody>
+          {NEAR_STEPS.map(d => {
+            const b = within(below, d), a = within(above, d);
+            return (
+              <tr key={d} style={{ borderTop: `1px solid ${C.line}` }}>
+                <td style={{ ...cell, textAlign: "left", color: C.muted }}>{d}</td>
+                <td style={{ ...cell, color: b ? C.fg : C.muted, fontWeight: b ? 700 : 400 }}>{b}</td>
+                <td style={{ ...cell, color: a ? C.fg : C.muted }}>{a}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ScoreLine({ scores, rows, bottom, counts, outOf, onOverride, rounded, C }) {
   const [wrapRef, width] = useElementWidth();
   const [dragging, setDragging] = useState(null);
+  const [focused, setFocused] = useState(null);
   const svgRef = useRef(null);
 
   const raw = [...scores].sort((a, b) => a - b);
@@ -1362,11 +1420,18 @@ function ScoreLine({ scores, rows, bottom, counts, outOf, onOverride, rounded, C
         <div style={{ fontSize: 12, fontWeight: 700, color: C.fg }}>All scores</div>
         <div style={{ fontSize: 11, color: C.muted }}>
           {rounded
-            ? "One column per whole number. Drag a cutoff (or use the arrow keys) to move it. Green: nobody rounds to that number. Amber ring: one point short."
-            : "Drag a cutoff (or use the arrow keys) to move it from gap to gap. Green marks gaps much wider than the spacing around them."}
+            ? "One column per whole number. Drag a cutoff (or use the arrow keys) to move it; a box shows how close the nearest scores are. Green: nobody rounds to that number. Amber ring: one point short."
+            : "Drag a cutoff (or use the arrow keys) to move it from gap to gap; a box shows how close the nearest scores are. Green marks gaps much wider than the spacing around them."}
         </div>
       </div>
-      {width > 0 && (
+      {width > 0 && (<div style={{ position: "relative" }}>
+        {(() => {
+          const i = rows.findIndex(rr => rr.letter === (dragging ?? focused));
+          if (i === -1) return null;
+          const boxW = 200;
+          const left = Math.max(0, Math.min(W - boxW, x(rows[i].cutoff - off) - boxW / 2));
+          return <CutoffNearBox raw={raw} row={rows[i]} rounded={rounded} left={left} width={boxW} C={C} />;
+        })()}
         <svg ref={svgRef} width={W} height={H} style={{ display: "block", overflow: "visible", userSelect: "none" }}
           role="group" aria-label="All scores with grade cutoffs">
           {/* grade bands */}
@@ -1445,6 +1510,8 @@ function ScoreLine({ scores, rows, bottom, counts, outOf, onOverride, rounded, C
                 onPointerUp={() => setDragging(null)}
                 onPointerCancel={() => setDragging(null)}
                 onKeyDown={e => onKey(i, e)}
+                onFocus={() => setFocused(row.letter)}
+                onBlur={() => setFocused(f => (f === row.letter ? null : f))}
               >
                 <line x1={cx} x2={cx} y1={8} y2={axisY} stroke="transparent" strokeWidth={16} />
                 <line x1={cx} x2={cx} y1={topH - 6} y2={axisY} stroke={C.accent} strokeWidth={active ? 2.5 : 2} />
@@ -1454,7 +1521,7 @@ function ScoreLine({ scores, rows, bottom, counts, outOf, onOverride, rounded, C
             );
           })}
         </svg>
-      )}
+      </div>)}
     </div>
   );
 }
