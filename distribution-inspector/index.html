@@ -179,7 +179,7 @@ function parseCSV(text) {
 // ── Google Sheets links ───────────────────────────────────────────────────────
 // Turns a Sheets link into CSV download URLs (tried in order). Returns null if
 // the text isn't a Sheets link. The sheet must be shared "Anyone with the link".
-function sheetsCSVUrls(link) {
+function sheetsCSVUrls(link, tabName = "") {
   let url;
   try { url = new URL(link.trim()); } catch (e) { return null; }
   if (!/(^|\.)docs\.google\.com$/.test(url.hostname)) return null;
@@ -192,14 +192,17 @@ function sheetsCSVUrls(link) {
   const m = url.pathname.match(/\/spreadsheets\/d\/([\w-]+)/);
   if (!m) return null;
   const base = `https://docs.google.com/spreadsheets/d/${m[1]}`;
+  // A tab picked by name only works through the gviz endpoint
+  const tab = tabName.trim();
+  if (tab) return [`${base}/gviz/tq?tqx=out:csv&headers=1&sheet=${encodeURIComponent(tab)}`];
   return [
     `${base}/export?format=csv${gidParam}`,
     `${base}/gviz/tq?tqx=out:csv&headers=1${gidParam}`,
   ];
 }
 
-async function fetchSheetCSV(link) {
-  const urls = sheetsCSVUrls(link);
+async function fetchSheetCSV(link, tabName) {
+  const urls = sheetsCSVUrls(link, tabName);
   if (!urls) throw new Error("That doesn't look like a Google Sheets link.");
   for (const u of urls) {
     try {
@@ -1841,6 +1844,7 @@ function HistogramTool() {
   }, [loadCSVText]);
 
   const [sheetLink, setSheetLink] = useState("");
+  const [sheetTab, setSheetTab] = useState("");
   const [sheetLoading, setSheetLoading] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const handleSheetLink = useCallback(async (e) => {
@@ -1849,14 +1853,14 @@ function HistogramTool() {
     setSheetLoading(true);
     setError("");
     try {
-      const text = await fetchSheetCSV(sheetLink);
-      if (loadCSVText(text, "Google Sheet")) { setSheetLink(""); setLinkOpen(false); }
+      const text = await fetchSheetCSV(sheetLink, sheetTab);
+      if (loadCSVText(text, sheetTab.trim() || "Google Sheet")) { setSheetLink(""); setSheetTab(""); setLinkOpen(false); }
     } catch (err) {
       setError(err.message);
     } finally {
       setSheetLoading(false);
     }
-  }, [sheetLink, sheetLoading, loadCSVText]);
+  }, [sheetLink, sheetTab, sheetLoading, loadCSVText]);
 
   // A CSV can be dropped anywhere on the page
   useEffect(() => {
@@ -2004,12 +2008,20 @@ function HistogramTool() {
             aria-label="Google Sheets link"
             style={{ flex: "1 1 260px", minWidth: 0, fontSize: 13, padding: "7px 10px", borderRadius: 9, border: `1px solid ${C.lineStrong}`, background: C.surface, color: C.fg, fontFamily: "inherit", outline: "none" }}
           />
+          <input
+            type="text"
+            value={sheetTab}
+            onChange={e => setSheetTab(e.target.value)}
+            placeholder="Tab name (optional)"
+            aria-label="Tab name"
+            style={{ flex: "0 1 150px", minWidth: 0, fontSize: 13, padding: "7px 10px", borderRadius: 9, border: `1px solid ${C.lineStrong}`, background: C.surface, color: C.fg, fontFamily: "inherit", outline: "none" }}
+          />
           <button type="submit" disabled={!sheetLink.trim() || sheetLoading}
             style={{ ...smallButton, color: C.fg, borderRadius: 9, fontSize: 12, padding: "7px 14px", opacity: (!sheetLink.trim() || sheetLoading) ? 0.5 : 1 }}>
             {sheetLoading ? "Loading…" : "Load"}
           </button>
           <span style={{ flexBasis: "100%", fontSize: 11, color: C.muted }}>
-            Sharing must be set to “Anyone with the link can view.” The tab in your link is the one that loads.
+            Sharing must be set to “Anyone with the link can view.” For a sheet with several tabs, type the tab name exactly as it appears at the bottom of the sheet. Left blank, it loads the tab in your link, or the first tab.
           </span>
         </form>
       )}
